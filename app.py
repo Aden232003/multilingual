@@ -66,7 +66,7 @@ def upload_file_to_r2(file_obj, filename, content_type=None):
     try:
         # Generate unique filename with timestamp
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        unique_filename = f"{timestamp}_{str(uuid.uuid4()[:8])}_{filename}"
+        unique_filename = f"{timestamp}_{str(uuid.uuid4())[:8]}_{filename}"
         
         # Upload to R2
         extra_args = {}
@@ -93,7 +93,7 @@ def upload_bytes_to_r2(data, filename, content_type=None):
     try:
         # Generate unique filename with timestamp
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        unique_filename = f"{timestamp}_{str(uuid.uuid4()[:8])}_{filename}"
+        unique_filename = f"{timestamp}_{str(uuid.uuid4())[:8]}_{filename}"
         
         # Upload to R2
         extra_args = {}
