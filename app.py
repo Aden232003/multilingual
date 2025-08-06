@@ -470,7 +470,7 @@ class Wav2LipSync:
             audio_size = os.path.getsize(audio_temp_path)
             print(f"File sizes: video={video_size}B, audio={audio_size}B")
             
-            url = "https://api.sync.so/v1/lip-sync"
+            url = "https://api.sync.so/v1/sync"
             headers = {
                 "Authorization": f"Bearer {WAV2LIP_API_KEY}"
                 # Don't set Content-Type for multipart/form-data - requests will handle it
@@ -1172,6 +1172,61 @@ def test_lip_sync():
             'language': language,
             'result': result,
             'message': 'Lip sync test completed'
+        })
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+@app.route('/api/test-wav2lip-api', methods=['GET', 'POST'])
+def test_wav2lip_api():
+    """Test Wav2Lip API connectivity and endpoints"""
+    try:
+        if not WAV2LIP_API_KEY:
+            return jsonify({
+                'success': False,
+                'error': 'WAV2LIP_API_KEY not configured'
+            }), 500
+        
+        headers = {
+            "Authorization": f"Bearer {WAV2LIP_API_KEY}"
+        }
+        
+        # Test different possible endpoints
+        endpoints_to_test = [
+            "https://api.sync.so/v1/sync",
+            "https://api.sync.so/v1/lip-sync", 
+            "https://api.sync.so/sync",
+            "https://api.sync.so/lip-sync",
+            "https://sync.so/api/v1/sync",
+            "https://sync.so/api/v1/lip-sync"
+        ]
+        
+        results = {}
+        
+        for endpoint in endpoints_to_test:
+            try:
+                print(f"Testing endpoint: {endpoint}")
+                response = requests.get(endpoint, headers=headers, timeout=10)
+                results[endpoint] = {
+                    'status_code': response.status_code,
+                    'response': response.text[:500] if response.text else 'No content',
+                    'headers': dict(response.headers)
+                }
+            except Exception as e:
+                results[endpoint] = {
+                    'error': str(e)
+                }
+        
+        return jsonify({
+            'success': True,
+            'api_key_configured': 'SET' if WAV2LIP_API_KEY else 'NOT_SET',
+            'endpoint_tests': results,
+            'message': 'Wav2Lip API endpoint test completed'
         })
         
     except Exception as e:
