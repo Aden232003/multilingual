@@ -53,10 +53,11 @@ R2_PUBLIC_URL = os.environ.get('R2_PUBLIC_URL', 'https://e9489e6c0f22eef2c0ba8b8
 
 # Initialize API clients
 if OPENAI_API_KEY:
-    openai.api_key = OPENAI_API_KEY
+    openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
     print("✅ OpenAI API key configured")
 else:
     print("❌ OpenAI API key not found")
+    openai_client = None
 
 if CLAUDE_API_KEY:
     claude_client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
@@ -224,6 +225,10 @@ def extract_audio_from_video(video_url):
 class TranscriptExtractor:
     def transcribe_audio(self, audio_url_or_path):
         try:
+            if not openai_client:
+                print("OpenAI client not configured")
+                return None
+                
             print(f"Starting transcription for: {audio_url_or_path}")
             
             # If it's a URL, download first
@@ -254,7 +259,7 @@ class TranscriptExtractor:
             
             print("Sending to OpenAI Whisper...")
             with open(audio_path, 'rb') as audio_file:
-                response = openai.audio.transcriptions.create(
+                response = openai_client.audio.transcriptions.create(
                     model="whisper-1",
                     file=audio_file,
                     response_format="text"
@@ -502,6 +507,12 @@ def upload_step_file():
                 # Audio file - store directly
                 workflow_state['audioFile'] = public_url
                 result['audioFile'] = public_url
+                
+        elif step == '2':
+            # Step 2: Audio file upload for transcription
+            workflow_state['audioFile'] = public_url
+            result['audioFile'] = public_url
+            print(f"Step 2 audio file stored: {public_url}")
                 
         elif step == '4' or step == '5':
             result['audioFile'] = public_url
@@ -837,7 +848,7 @@ def test_transcription():
         print("Testing OpenAI Whisper...")
         try:
             with open(temp_path, 'rb') as audio:
-                response = openai.audio.transcriptions.create(
+                response = openai_client.audio.transcriptions.create(
                     model="whisper-1",
                     file=audio,
                     response_format="text"
@@ -920,7 +931,7 @@ def test_transcribe_r2():
         # Test transcription
         try:
             with open(temp_path, 'rb') as audio:
-                response = openai.audio.transcriptions.create(
+                response = openai_client.audio.transcriptions.create(
                     model="whisper-1",
                     file=audio,
                     response_format="text"
