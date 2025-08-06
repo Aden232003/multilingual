@@ -515,16 +515,40 @@ def upload_step_file():
         print(f"Upload error: {str(e)}")
         return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
-@app.route('/api/transcribe', methods=['POST'])
+@app.route('/api/transcribe', methods=['GET', 'POST'])
 def transcribe_audio():
     """Transcribe audio file using OpenAI Whisper"""
-    data = request.get_json()
-    audio_file = data.get('audioFile') or workflow_state.get('audioFile')
-    
-    if not audio_file:
-        return jsonify({'error': 'No audio file available. Please complete Step 1 first.'}), 400
-    
     try:
+        # Handle both GET and POST requests
+        if request.method == 'POST':
+            data = request.get_json() or {}
+            audio_file = data.get('audioFile') or workflow_state.get('audioFile')
+        else:
+            # For GET requests, try to find an audio file in R2
+            audio_file = request.args.get('audioFile') or workflow_state.get('audioFile')
+            
+            # If no audio file specified, try to find one in R2
+            if not audio_file:
+                try:
+                    response = r2_client.list_objects_v2(Bucket=R2_BUCKET_NAME)
+                    if 'Contents' in response:
+                        audio_files = [obj['Key'] for obj in response['Contents'] 
+                                     if obj['Key'].endswith(('.mp3', '.wav', '.m4a'))]
+                        if audio_files:
+                            # Use the most recent audio file
+                            latest_audio = sorted(audio_files)[-1]
+                            audio_file = f"{R2_PUBLIC_URL}/{latest_audio}"
+                            print(f"Found R2 audio file: {audio_file}")
+                except Exception as r2_error:
+                    print(f"R2 error: {r2_error}")
+        
+        if not audio_file:
+            return jsonify({
+                'error': 'No audio file available. Please complete Step 1 first.',
+                'workflow_state': workflow_state,
+                'help': 'Try uploading a video/audio file first, or specify audioFile parameter'
+            }), 400
+        
         print(f"Starting transcription for: {audio_file}")
         transcript = transcript_extractor.transcribe_audio(audio_file)
         
@@ -535,13 +559,21 @@ def transcribe_audio():
             return jsonify({
                 'transcript': transcript,
                 'length': len(transcript),
-                'words': len(transcript.split())
+                'words': len(transcript.split()),
+                'audio_file': audio_file
             })
         else:
-            return jsonify({'error': 'Transcription failed'}), 500
+            return jsonify({'error': 'Transcription failed', 'audio_file': audio_file}), 500
+            
     except Exception as e:
         print(f"Transcription error: {e}")
-        return jsonify({'error': str(e)}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc(),
+            'workflow_state': workflow_state
+        }), 500
 
 @app.route('/api/save-transcript', methods=['POST'])
 def save_transcript():
