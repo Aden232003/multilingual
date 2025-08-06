@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Talented Multilingual Video Workflow</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1 class="title">🎬 Talented Multilingual Video Workflow</h1>
+                <p class="subtitle">Professional step-by-step workflow for converting content into Hindi, Tamil, Telugu, Gujarati with AI-powered processing</p>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main">
+            <div class="workflow-container">
+                <!-- Sidebar Navigation -->
+                <aside class="sidebar">
+                    <h3>Workflow Steps</h3>
+                    <nav class="step-nav">
+                        <div class="step-nav-item active" data-step="1">
+                            <span class="step-number">1</span>
+                            <div>
+                                <div>Video/Audio Input</div>
+                                <small>Upload or convert media</small>
+                            </div>
+                        </div>
+                        <div class="step-nav-item" data-step="2">
+                            <span class="step-number">2</span>
+                            <div>
+                                <div>AI Transcription</div>
+                                <small>Speech to text</small>
+                            </div>
+                        </div>
+                        <div class="step-nav-item" data-step="3">
+                            <span class="step-number">3</span>
+                            <div>
+                                <div>Cultural Translation</div>
+                                <small>Multi-language adaptation</small>
+                            </div>
+                        </div>
+                        <div class="step-nav-item" data-step="4">
+                            <span class="step-number">4</span>
+                            <div>
+                                <div>Voice Synthesis</div>
+                                <small>Generate new audio</small>
+                            </div>
+                        </div>
+                        <div class="step-nav-item" data-step="5">
+                            <span class="step-number">5</span>
+                            <div>
+                                <div>Lip Sync</div>
+                                <small>Create final videos</small>
+                            </div>
+                        </div>
+                    </nav>
+                </aside>
+
+                <!-- Content Area -->
+                <div class="content-area">
+                    <!-- Step 1: Video/Audio Input -->
+                    <div class="step-content active" id="step-1">
+                        <div class="card">
+                            <div class="card-header">
+                                <h2>📹 Step 1: Video/Audio Input</h2>
+                                <p>Upload your media file or start with existing files</p>
+                            </div>
+
+                            <div class="file-area">
+                                <h4>📁 Input File</h4>
+                                <div class="upload-zone" id="upload-zone-1">
+                                    <input type="file" id="file-input-1" accept=".mp4,.avi,.mov,.mp3,.wav,.m4a" hidden>
+                                    <span class="upload-icon">📹</span>
+                                    <h3>Drag & Drop or Click to Upload</h3>
+                                    <p>Supports: MP4, AVI, MOV, MP3, WAV, M4A</p>
+                                    <p>Max size: 100MB</p>
+                                </div>
+                                
+                                <div class="action-buttons">
+                                    <button class="btn-primary" onclick="document.getElementById('file-input-1').click()">
+                                        📁 Choose File
+                                    </button>
+                                    <button class="btn-secondary" id="use-existing-btn">
+                                        🎯 Use Existing Files
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="file-area" id="output-area-1" style="display: none;">
+                                <h4>📄 Extracted Audio</h4>
+                                <div class="file-viewer" id="audio-info">
+                                    <p>No audio file generated yet.</p>
+                                </div>
+                                <div class="action-buttons">
+                                    <button class="btn-accent" id="download-audio">📥 Download Audio</button>
+                                    <button class="btn-primary" id="proceed-to-step-2">▶️ Proceed to Transcription</button>
+                                </div>
+                            </div>
+
+                            <div class="progress-bar" id="progress-1" style="display: none;">
+                                <div class="progress-fill"></div>
+                            </div>
+                            <div class="status-badge pending" id="status-1">Ready</div>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Transcription -->
+                    <div class="step-content" id="step-2">
+                        <div class="card">
+                            <div class="card-header">
+                                <h2>🎤 Step 2: AI Transcription</h2>
+                                <p>Convert speech to text using OpenAI Whisper</p>
+                            </div>
+
+                            <div class="file-area">
+                                <h4>📁 Audio Input</h4>
+                                <div class="upload-zone" id="upload-zone-2">
+                                    <input type="file" id="file-input-2" accept=".mp3,.wav,.m4a" hidden>
+                                    <span class="upload-icon">🎤</span>
+                                    <h3>Upload Audio File (Optional)</h3>
+                                    <p>Or use audio from Step 1</p>
+                                </div>
+                                
+                                <div class="action-buttons">
+                                    <button class="btn-primary" onclick="document.getElementById('file-input-2').click()">
+                                        📁 Upload Audio
+                                    </button>
+                                    <button class="btn-secondary" id="start-transcription">
+                                        🚀 Start Transcription
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="file-area" id="output-area-2" style="display: none;">
+                                <h4>📄 Generated Transcript</h4>
+                                <textarea class="file-editor" id="transcript-editor" placeholder="Transcript will appear here..."></textarea>
+                                
+                                <div class="action-buttons">
+                                    <button class="btn-secondary" id="save-transcript">💾 Save Changes</button>
+                                    <button class="btn-accent" id="download-transcript">📥 Download Transcript</button>
+                                    <button class="btn-primary" id="proceed-to-step-3">▶️ Proceed to Translation</button>
+                                </div>
+                            </div>
+
+                            <div class="progress-bar" id="progress-2" style="display: none;">
+                                <div class="progress-fill"></div>
+                            </div>
+                            <div class="status-badge pending" id="status-2">Ready</div>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Translation -->
+                    <div class="step-content" id="step-3">
+                        <div class="card">
+                            <div class="card-header">
+                                <h2>🌍 Step 3: Cultural Translation</h2>
+                                <p>Generate culturally adapted translations using Claude AI</p>
+                            </div>
+
+                            <div class="file-area">
+                                <h4>📁 Transcript Input</h4>
+                                <div class="upload-zone" id="upload-zone-3">
+                                    <input type="file" id="file-input-3" accept=".txt" hidden>
+                                    <span class="upload-icon">📝</span>
+                                    <h3>Upload Transcript (Optional)</h3>
+                                    <p>Or use transcript from Step 2</p>
+                                </div>
+                                
+                                <div class="action-buttons">
+                                    <button class="btn-primary" onclick="document.getElementById('file-input-3').click()">
+                                        📁 Upload Transcript
+                                    </button>
+                                    <button class="btn-secondary" id="start-translation">
+                                        🚀 Start Translation
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="file-area" id="output-area-3" style="display: none;">
+                                <h4>🌐 Cultural Translations</h4>
+                                
+                                <div class="language-tabs">
+                                    <button class="language-tab active" data-lang="hindi">हिंदी Hindi</button>
+                                    <button class="language-tab" data-lang="tamil">தமிழ் Tamil</button>
+                                    <button class="language-tab" data-lang="gujarati">ગુજરાતી Gujarati</button>
+                                    <button class="language-tab" data-lang="telugu">తెలుగు Telugu</button>
+                                </div>
+
+                                <div class="language-content">
+                                    <textarea class="file-editor" id="translation-editor" placeholder="Translation will appear here..."></textarea>
+                                </div>
+                                
+                                <div class="action-buttons">
+                                    <button class="btn-secondary" id="save-translations">💾 Save All Translations</button>
+                                    <button class="btn-accent" id="download-translations">📥 Download All</button>
+                                    <button class="btn-primary" id="proceed-to-step-4">▶️ Proceed to Voice Synthesis</button>
+                                </div>
+                            </div>
+
+                            <div class="progress-bar" id="progress-3" style="display: none;">
+                                <div class="progress-fill"></div>
+                            </div>
+                            <div class="status-badge pending" id="status-3">Ready</div>
+                        </div>
+                    </div>
+
+                    <!-- Step 4: Voice Synthesis -->
+                    <div class="step-content" id="step-4">
+                        <div class="card">
+                            <div class="card-header">
+                                <h2>🎵 Step 4: Voice Synthesis</h2>
+                                <p>Generate audio using ElevenLabs TTS (Hindi & Tamil) or upload external audio</p>
+                            </div>
+
+                            <div class="file-area">
+                                <h4>📁 Translation Input</h4>
+                                <div class="upload-zone" id="upload-zone-4">
+                                    <input type="file" id="file-input-4" accept=".txt" multiple hidden>
+                                    <span class="upload-icon">🌐</span>
+                                    <h3>Upload Translation Files (Optional)</h3>
+                                    <p>Or use translations from Step 3</p>
+                                </div>
+                            </div>
+
+                            <div class="file-area">
+                                <h4>🎤 External Audio Files (Optional)</h4>
+                                <p>Upload pre-recorded audio for languages not supported by TTS</p>
+                                
+                                <div class="language-tabs">
+                                    <button class="language-tab active" data-lang="hindi">Hindi Audio</button>
+                                    <button class="language-tab" data-lang="tamil">Tamil Audio</button>
+                                    <button class="language-tab" data-lang="gujarati">Gujarati Audio</button>
+                                    <button class="language-tab" data-lang="telugu">Telugu Audio</button>
+                                </div>
+
+                                <div class="language-content">
+                                    <div class="upload-zone" id="audio-upload-zone">
+                                        <input type="file" id="external-audio-input" accept=".mp3,.wav,.m4a" hidden>
+                                        <span class="upload-icon">🎤</span>
+                                        <h3>Upload Audio for Selected Language</h3>
+                                        <p>Supports: MP3, WAV, M4A</p>
+                                    </div>
+                                </div>
+                                
+                                <div class="action-buttons">
+                                    <button class="btn-primary" onclick="document.getElementById('external-audio-input').click()">
+                                        📁 Upload Audio
+                                    </button>
+                                    <button class="btn-secondary" id="start-voice-synthesis">
+                                        🚀 Start Voice Synthesis
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="file-area" id="output-area-4" style="display: none;">
+                                <h4>🎵 Generated Audio Files</h4>
+                                <div class="results-grid" id="audio-results">
+                                    <!-- Audio results will be populated here -->
+                                </div>
+                                
+                                <div class="action-buttons">
+                                    <button class="btn-accent" id="download-all-audio">📥 Download All Audio</button>
+                                    <button class="btn-primary" id="proceed-to-step-5">▶️ Proceed to Lip Sync</button>
+                                </div>
+                            </div>
+
+                            <div class="progress-bar" id="progress-4" style="display: none;">
+                                <div class="progress-fill"></div>
+                            </div>
+                            <div class="status-badge pending" id="status-4">Ready</div>
+                        </div>
+                    </div>
+
+                    <!-- Step 5: Lip Sync -->
+                    <div class="step-content" id="step-5">
+                        <div class="card">
+                            <div class="card-header">
+                                <h2>🎭 Step 5: Lip Sync Magic</h2>
+                                <p>Create lip-synced videos using Wav2Lip API</p>
+                            </div>
+
+                            <div class="file-area">
+                                <h4>📹 Video Input</h4>
+                                <div class="upload-zone" id="upload-zone-5">
+                                    <input type="file" id="file-input-5" accept=".mp4,.avi,.mov" hidden>
+                                    <span class="upload-icon">📹</span>
+                                    <h3>Upload Video File (Optional)</h3>
+                                    <p>Or use video from Step 1</p>
+                                </div>
+                            </div>
+
+                            <div class="file-area">
+                                <h4>🎤 Audio Files</h4>
+                                <p>Upload audio files or use generated audio from Step 4</p>
+                                
+                                <div class="language-tabs">
+                                    <button class="language-tab active" data-lang="hindi">Hindi</button>
+                                    <button class="language-tab" data-lang="tamil">Tamil</button>
+                                    <button class="language-tab" data-lang="gujarati">Gujarati</button>
+                                    <button class="language-tab" data-lang="telugu">Telugu</button>
+                                </div>
+
+                                <div class="language-content">
+                                    <div class="upload-zone" id="lip-sync-audio-zone">
+                                        <input type="file" id="lip-sync-audio-input" accept=".mp3,.wav,.m4a" hidden>
+                                        <span class="upload-icon">🎵</span>
+                                        <h3>Upload Audio for Lip Sync</h3>
+                                        <p>Audio for selected language</p>
+                                    </div>
+                                </div>
+                                
+                                <div class="action-buttons">
+                                    <button class="btn-primary" onclick="document.getElementById('lip-sync-audio-input').click()">
+                                        📁 Upload Audio
+                                    </button>
+                                    <button class="btn-secondary" id="start-lip-sync">
+                                        🚀 Start Lip Sync
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="file-area" id="output-area-5" style="display: none;">
+                                <h4>🎬 Final Videos</h4>
+                                <div class="results-grid" id="video-results">
+                                    <!-- Video results will be populated here -->
+                                </div>
+                                
+                                <div class="action-buttons">
+                                    <button class="btn-accent" id="download-all-videos">📥 Download All Videos</button>
+                                    <button class="btn-primary" id="start-new-workflow">🔄 Start New Workflow</button>
+                                </div>
+                            </div>
+
+                            <div class="progress-bar" id="progress-5" style="display: none;">
+                                <div class="progress-fill"></div>
+                            </div>
+                            <div class="status-badge pending" id="status-5">Ready</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>🌟 Talented Agency - Professional multilingual content creation</p>
+            <div class="footer-links">
+                <a href="#" class="footer-link">📚 Documentation</a>
+                <a href="#" class="footer-link">💬 Support</a>
+                <a href="#" class="footer-link">🐛 Report Issue</a>
+            </div>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
