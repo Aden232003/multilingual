@@ -1505,6 +1505,65 @@ def check_all_jobs():
             'traceback': traceback.format_exc()
         }), 500
 
+@app.route('/api/list-elevenlabs-voices', methods=['GET'])
+def list_elevenlabs_voices():
+    """List all available ElevenLabs voices including Niharika"""
+    try:
+        if not ELEVENLABS_API_KEY:
+            return jsonify({
+                'success': False,
+                'error': 'ELEVENLABS_API_KEY not configured'
+            }), 500
+        
+        url = "https://api.elevenlabs.io/v1/voices"
+        headers = {
+            "xi-api-key": ELEVENLABS_API_KEY
+        }
+        
+        response = requests.get(url, headers=headers, timeout=30)
+        
+        if response.status_code == 200:
+            result = response.json()
+            voices = []
+            
+            for voice in result.get('voices', []):
+                voices.append({
+                    'name': voice.get('name'),
+                    'voice_id': voice.get('voice_id'),
+                    'category': voice.get('category'),
+                    'labels': voice.get('labels', {}),
+                    'preview_url': voice.get('preview_url')
+                })
+            
+            # Find Niharika specifically
+            niharika_voice = None
+            for voice in voices:
+                if voice['name'] and 'niharika' in voice['name'].lower():
+                    niharika_voice = voice
+                    break
+            
+            return jsonify({
+                'success': True,
+                'total_voices': len(voices),
+                'niharika_voice': niharika_voice,
+                'all_voices': voices,
+                'current_voice_id': "21m00Tcm4TlvDq8ikWAM",
+                'message': 'ElevenLabs voices retrieved successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': f'ElevenLabs API error: {response.status_code} - {response.text}'
+            }), response.status_code
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
 @app.route('/api/debug-env')
 def debug_env():
     """Debug endpoint to check environment variables (masking sensitive data)"""
