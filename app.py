@@ -454,7 +454,7 @@ class Wav2LipSync:
             # New Sync.so API format - uses URLs not file uploads
             url = "https://api.sync.so/v2/generate"
             headers = {
-                "Authorization": f"Bearer {WAV2LIP_API_KEY}",
+                "x-api-key": WAV2LIP_API_KEY,
                 "Content-Type": "application/json"
             }
             
@@ -1185,7 +1185,7 @@ def test_wav2lip_api():
             }), 500
         
         headers = {
-            "Authorization": f"Bearer {WAV2LIP_API_KEY}"
+            "x-api-key": WAV2LIP_API_KEY
         }
         
         # Test different possible endpoints with both GET and POST
@@ -1252,7 +1252,7 @@ def check_lip_sync_status(job_id):
             }), 500
             
         headers = {
-            "Authorization": f"Bearer {WAV2LIP_API_KEY}"
+            "x-api-key": WAV2LIP_API_KEY
         }
         
         # Try different possible status endpoints
