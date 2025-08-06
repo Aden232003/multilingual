@@ -257,13 +257,85 @@ class TranscriptExtractor:
                 print("Audio file is empty")
                 return None
             
+            # Check file format by reading first few bytes
+            with open(audio_path, 'rb') as f:
+                first_bytes = f.read(12)
+                print(f"File header: {first_bytes.hex()}")
+                
+                # Check for common audio file signatures
+                if first_bytes.startswith(b'ID3') or first_bytes[1:4] == b'ID3':
+                    print("Detected: MP3 with ID3 tag")
+                elif first_bytes[:4] == b'fLaC':
+                    print("Detected: FLAC")
+                elif first_bytes[4:8] == b'ftyp':
+                    print("Detected: MP4/M4A")
+                elif first_bytes[:4] == b'RIFF':
+                    print("Detected: WAV")
+                elif first_bytes[:4] == b'OggS':
+                    print("Detected: OGG")
+                else:
+                    print(f"Unknown format - first 12 bytes: {first_bytes}")
+                    
+                # Try to detect MP3 frame sync
+                f.seek(0)
+                data = f.read(1024)
+                for i in range(len(data) - 1):
+                    if data[i] == 0xFF and (data[i+1] & 0xE0) == 0xE0:
+                        print(f"Found MP3 frame sync at offset {i}")
+                        break
+                else:
+                    print("No MP3 frame sync found in first 1024 bytes")
+            
             print("Sending to OpenAI Whisper...")
-            with open(audio_path, 'rb') as audio_file:
-                response = openai_client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    response_format="text"
-                )
+            
+            # Try direct transcription first
+            try:
+                with open(audio_path, 'rb') as audio_file:
+                    response = openai_client.audio.transcriptions.create(
+                        model="whisper-1",
+                        file=audio_file,
+                        response_format="text"
+                    )
+            except Exception as transcribe_error:
+                print(f"Direct transcription failed: {transcribe_error}")
+                
+                # Try converting to WAV format if MoviePy is available
+                if VideoFileClip:
+                    try:
+                        print("Attempting format conversion with MoviePy...")
+                        from moviepy.editor import AudioFileClip
+                        
+                        # Create temporary WAV file
+                        wav_temp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+                        wav_temp.close()
+                        
+                        # Convert to WAV
+                        audio_clip = AudioFileClip(audio_path)
+                        audio_clip.write_audiofile(wav_temp.name, verbose=False, logger=None)
+                        audio_clip.close()
+                        
+                        print(f"Converted to WAV: {wav_temp.name}")
+                        
+                        # Try transcription with converted file
+                        with open(wav_temp.name, 'rb') as wav_file:
+                            response = openai_client.audio.transcriptions.create(
+                                model="whisper-1",
+                                file=wav_file,
+                                response_format="text"
+                            )
+                        
+                        # Clean up converted file
+                        os.unlink(wav_temp.name)
+                        print("Format conversion successful, transcription completed")
+                        
+                    except Exception as convert_error:
+                        print(f"Format conversion failed: {convert_error}")
+                        if 'wav_temp' in locals() and os.path.exists(wav_temp.name):
+                            os.unlink(wav_temp.name)
+                        raise transcribe_error  # Re-raise original error
+                else:
+                    print("MoviePy not available for format conversion")
+                    raise transcribe_error  # Re-raise original error
                 
             print(f"Transcription successful: {len(response) if response else 0} characters")
                 
