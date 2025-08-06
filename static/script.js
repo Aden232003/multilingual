@@ -505,17 +505,18 @@ class ModularWorkflowApp {
                     const result = await response.json();
                     
                     if (response.ok && result.success) {
-                        const status = result.status || result.result?.status || 'processing';
+                        const status = result.result?.status || result.status || 'processing';
+                        const outputUrl = result.result?.outputUrl || result.result?.output_url || result.result?.download_url;
                         updatedResults[language] = {
                             ...jobInfo,
-                            status: status,
-                            output_url: result.result?.output_url || result.result?.download_url,
+                            status: status.toLowerCase(), // Convert COMPLETED to completed
+                            output_url: outputUrl,
                             progress: result.result?.progress || 'processing'
                         };
                         
-                        if (status !== 'completed') {
+                        if (status.toLowerCase() !== 'completed') {
                             allCompleted = false;
-                            if (status === 'processing') {
+                            if (status.toLowerCase() === 'processing') {
                                 anyProcessing = true;
                             }
                         }
