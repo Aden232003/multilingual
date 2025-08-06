@@ -378,6 +378,8 @@ class ClaudeTranslator:
             return translations
         except Exception as e:
             print(f"Translation error: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
 class ElevenLabsTTS:
@@ -806,21 +808,47 @@ def download_audio():
 def test_translation():
     """Test translation functionality independently"""
     try:
+        # Check if Claude client is configured
+        if not claude_client:
+            return jsonify({
+                'success': False,
+                'error': 'Claude client not configured - CLAUDE_API_KEY missing'
+            }), 500
+            
         test_transcript = "Hello, this is a test transcript for the multilingual video workflow application."
         print("Testing Claude translation...")
         
-        translations = translator.translate_transcript(test_transcript, '00:30')
-        if translations:
+        try:
+            translations = translator.translate_transcript(test_transcript, '00:30')
+            if translations:
+                return jsonify({
+                    'success': True,
+                    'test_transcript': test_transcript,
+                    'translations': translations,
+                    'message': 'Translation test successful'
+                })
+            else:
+                return jsonify({
+                    'success': False, 
+                    'error': 'Translation returned None - check Claude API key and model access',
+                    'claude_client_status': 'CONFIGURED' if claude_client else 'NOT_CONFIGURED'
+                }), 500
+        except Exception as translation_error:
+            import traceback
             return jsonify({
-                'success': True,
-                'test_transcript': test_transcript,
-                'translations': translations,
-                'message': 'Translation test successful'
-            })
-        else:
-            return jsonify({'success': False, 'error': 'Translation test failed'}), 500
+                'success': False,
+                'error': f'Translation error: {str(translation_error)}',
+                'traceback': traceback.format_exc(),
+                'claude_client_status': 'CONFIGURED' if claude_client else 'NOT_CONFIGURED'
+            }), 500
+            
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
 
 @app.route('/api/test-voice-synthesis', methods=['GET', 'POST'])
 def test_voice_synthesis():
