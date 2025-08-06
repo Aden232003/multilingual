@@ -448,8 +448,57 @@ class Wav2LipSync:
         try:
             print(f"Starting lip sync for {language}: video={video_url}, audio={audio_url}")
             
-            # Verify URLs are accessible
-            print(f"Using R2 URLs directly - no file download needed")
+            # Test if URLs are publicly accessible
+            print("Testing URL accessibility...")
+            try:
+                video_test = requests.head(video_url, timeout=10)
+                audio_test = requests.head(audio_url, timeout=10)
+                print(f"Video URL test: {video_test.status_code}")
+                print(f"Audio URL test: {audio_test.status_code}")
+                
+                if video_test.status_code != 200:
+                    print(f"Video URL not accessible: {video_test.status_code}")
+                    return {
+                        'status': 'failed',
+                        'error': f'Video URL not publicly accessible: {video_test.status_code}'
+                    }
+                
+                if audio_test.status_code != 200:
+                    print(f"Audio URL not accessible: {audio_test.status_code}")
+                    return {
+                        'status': 'failed',
+                        'error': f'Audio URL not publicly accessible: {audio_test.status_code}'
+                    }
+                    
+            except Exception as url_error:
+                print(f"URL accessibility test failed: {url_error}")
+                return {
+                    'status': 'failed',
+                    'error': f'URL accessibility test failed: {str(url_error)}'
+                }
+            
+            print(f"URLs are accessible - proceeding with API request")
+            
+            # If URLs are not accessible, try using presigned URLs
+            if audio_test.status_code != 200 or video_test.status_code != 200:
+                print("Creating presigned URLs for API access...")
+                
+                video_filename = video_url.split('/')[-1]
+                audio_filename = audio_url.split('/')[-1]
+                
+                # Create presigned URLs with longer expiration for processing
+                video_presigned = get_presigned_url(video_filename, expiration=7200)  # 2 hours
+                audio_presigned = get_presigned_url(audio_filename, expiration=7200)  # 2 hours
+                
+                if video_presigned and audio_presigned:
+                    video_url = video_presigned
+                    audio_url = audio_presigned
+                    print(f"Using presigned URLs: video_len={len(video_url)}, audio_len={len(audio_url)}")
+                else:
+                    return {
+                        'status': 'failed',
+                        'error': 'Could not create presigned URLs for API access'
+                    }
             
             # New Sync.so API format - uses URLs not file uploads
             url = "https://api.sync.so/v2/generate"
