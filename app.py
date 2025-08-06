@@ -446,27 +446,43 @@ class ElevenLabsTTS:
 class Wav2LipSync:
     def sync_video_with_audio(self, video_url, audio_url, language):
         try:
+            print(f"Starting lip sync for {language}: video={video_url}, audio={audio_url}")
+            
             # Download files from R2 for processing
             video_filename = video_url.split('/')[-1]
             audio_filename = audio_url.split('/')[-1]
             
+            print(f"Downloading files: video={video_filename}, audio={audio_filename}")
             video_temp_path = download_file_from_r2(video_filename)
             audio_temp_path = download_file_from_r2(audio_filename)
             
-            if not video_temp_path or not audio_temp_path:
+            if not video_temp_path:
+                print(f"Failed to download video file: {video_filename}")
+                return None
+            if not audio_temp_path:
+                print(f"Failed to download audio file: {audio_filename}")
                 return None
                 
+            print(f"Files downloaded: video={video_temp_path}, audio={audio_temp_path}")
+            
+            # Check file sizes
+            video_size = os.path.getsize(video_temp_path)
+            audio_size = os.path.getsize(audio_temp_path)
+            print(f"File sizes: video={video_size}B, audio={audio_size}B")
+            
             url = "https://api.sync.so/v1/lip-sync"
             headers = {
-                "Authorization": f"Bearer {WAV2LIP_API_KEY}",
-                "Content-Type": "application/json"
+                "Authorization": f"Bearer {WAV2LIP_API_KEY}"
+                # Don't set Content-Type for multipart/form-data - requests will handle it
             }
             
+            print("Sending lip sync request to Wav2Lip API...")
+            
             # Upload files and get job ID
-            with open(video_temp_path, 'rb') as video, open(audio_temp_path, 'rb') as audio:
+            with open(video_temp_path, 'rb') as video_file, open(audio_temp_path, 'rb') as audio_file:
                 files = {
-                    'video': video,
-                    'audio': audio
+                    'video': video_file,
+                    'audio': audio_file
                 }
                 data = {
                     'mode': 'cut_off'
@@ -474,21 +490,35 @@ class Wav2LipSync:
                 
                 response = requests.post(url, files=files, data=data, headers=headers)
                 
+            print(f"Wav2Lip API response: status={response.status_code}")
+            print(f"Response content: {response.text}")
+                
             # Clean up temp files
             os.unlink(video_temp_path)
             os.unlink(audio_temp_path)
                 
             if response.status_code == 200:
                 result = response.json()
+                print(f"Lip sync job created successfully: {result}")
                 return {
                     'status': 'processing',
                     'job_id': result.get('id'),
                     'output_url': result.get('output_url')
                 }
-            return None
+            else:
+                print(f"Wav2Lip API error: {response.status_code} - {response.text}")
+                return {
+                    'status': 'failed',
+                    'error': f"API error {response.status_code}: {response.text}"
+                }
         except Exception as e:
             print(f"Lip sync error: {e}")
-            return None
+            import traceback
+            traceback.print_exc()
+            return {
+                'status': 'failed',
+                'error': str(e)
+            }
 
 # Initialize modules
 transcript_extractor = TranscriptExtractor()
@@ -1084,6 +1114,72 @@ def test_transcribe_r2():
         return jsonify({
             'success': False,
             'error': str(e)
+        }), 500
+
+@app.route('/api/test-lip-sync', methods=['GET', 'POST'])
+def test_lip_sync():
+    """Test lip sync functionality with existing files"""
+    try:
+        # Get existing video and audio files from R2
+        response = r2_client.list_objects_v2(Bucket=R2_BUCKET_NAME)
+        if 'Contents' not in response:
+            return jsonify({
+                'success': False,
+                'error': 'No files found in R2 bucket'
+            }), 404
+        
+        video_files = []
+        audio_files = []
+        
+        for obj in response['Contents']:
+            filename = obj['Key']
+            if filename.endswith(('.mp4', '.avi', '.mov')):
+                video_files.append(filename)
+            elif filename.endswith('_audio.mp3') and any(lang in filename for lang in ['hindi', 'tamil']):
+                audio_files.append(filename)
+        
+        if not video_files:
+            return jsonify({
+                'success': False,
+                'error': 'No video files found in R2 bucket',
+                'all_files': [obj['Key'] for obj in response['Contents']]
+            }), 404
+        
+        if not audio_files:
+            return jsonify({
+                'success': False,
+                'error': 'No translated audio files found in R2 bucket',
+                'all_files': [obj['Key'] for obj in response['Contents']]
+            }), 404
+        
+        # Use the most recent video and audio file
+        video_file = sorted(video_files)[-1]
+        audio_file = sorted(audio_files)[-1]
+        
+        video_url = f"{R2_PUBLIC_URL}/{video_file}"
+        audio_url = f"{R2_PUBLIC_URL}/{audio_file}"
+        
+        language = 'hindi' if 'hindi' in audio_file else 'tamil'
+        
+        print(f"Testing lip sync with video: {video_file}, audio: {audio_file}")
+        
+        result = lip_sync.sync_video_with_audio(video_url, audio_url, language)
+        
+        return jsonify({
+            'success': result is not None and result.get('status') != 'failed',
+            'video_file': video_file,
+            'audio_file': audio_file,
+            'language': language,
+            'result': result,
+            'message': 'Lip sync test completed'
+        })
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
         }), 500
 
 @app.route('/api/debug-env')
