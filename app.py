@@ -361,15 +361,27 @@ class ClaudeTranslator:
                 return None
                 
             prompt = f"""
-            Translate this video transcript into Hindi, Tamil, Gujarati, and Telugu:
+            Translate this {duration}-second video transcript into Hindi, Tamil, Gujarati, and Telugu with modern, casual speech patterns:
 
             Original: {transcript}
+            Video Duration: {duration} seconds
 
             Requirements:
             1. Use native scripts only - Hindi in Devanagari, Tamil in Tamil script, Telugu in Telugu script, Gujarati in Gujarati script
-            2. NO romanized text or English letters
-            3. Maintain original meaning and tone
-            4. Keep similar length for lip sync
+            2. NO romanized text or English letters in the output
+            3. Use CASUAL, MODERN language - avoid traditional/formal/literary words
+            4. Keep common English words that young urban speakers naturally use (like "couple", "jealous", "restaurant", "notifications", etc.)
+            5. Maintain sentence-by-sentence timing for gesture synchronization
+            6. Use contemporary urban speech patterns with natural English-local language code-switching
+            7. Keep similar syllable count and rhythm for lip sync compatibility
+            8. Preserve original tone, humor, and emotional beats
+            9. CRITICAL: Match the {duration}-second timing - translations must fit the same speaking duration as the original
+
+            Translation Style:
+            - Hindi: Modern Delhi/Mumbai casual speech, not traditional Hindi
+            - Tamil: Chennai urban casual style with natural English mixing
+            - Telugu: Hyderabad casual style with contemporary expressions
+            - Gujarati: Urban Gujarati casual speech with business community expressions
 
             Return only valid JSON:
             {{"hindi": "हिंदी में", "tamil": "தமிழில்", "gujarati": "ગુજરાતીમાં", "telugu": "తెలుగులో"}}
