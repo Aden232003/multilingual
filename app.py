@@ -452,7 +452,7 @@ class Wav2LipSync:
             print(f"Using R2 URLs directly - no file download needed")
             
             # New Sync.so API format - uses URLs not file uploads
-            url = "https://api.sync.so/generations"
+            url = "https://api.sync.so/v2/generate"
             headers = {
                 "Authorization": f"Bearer {WAV2LIP_API_KEY}",
                 "Content-Type": "application/json"
@@ -1190,10 +1190,12 @@ def test_wav2lip_api():
         
         # Test different possible endpoints with both GET and POST
         endpoints_to_test = [
+            "https://api.sync.so/v2/generate",
             "https://api.sync.so/v1/sync",
             "https://api.sync.so/v1/lip-sync", 
             "https://api.sync.so/sync",
-            "https://api.sync.so/lip-sync"
+            "https://api.sync.so/lip-sync",
+            "https://api.sync.so/generate"
         ]
         
         results = {}
@@ -1255,9 +1257,10 @@ def check_lip_sync_status(job_id):
         
         # Try different possible status endpoints
         possible_urls = [
-            f"https://api.sync.so/generations/{job_id}",
-            f"https://api.sync.so/jobs/{job_id}",
-            f"https://api.sync.so/status/{job_id}"
+            f"https://api.sync.so/v2/generate/{job_id}",
+            f"https://api.sync.so/v2/jobs/{job_id}",
+            f"https://api.sync.so/v2/status/{job_id}",
+            f"https://api.sync.so/generate/{job_id}"
         ]
         
         for url in possible_urls:
