@@ -962,6 +962,41 @@ def test_transcribe_r2():
             'error': str(e)
         }), 500
 
+@app.route('/api/debug-env')
+def debug_env():
+    """Debug endpoint to check environment variables (masking sensitive data)"""
+    try:
+        env_info = {}
+        
+        # Check API keys (mask for security)
+        openai_key = os.environ.get('OPENAI_API_KEY', 'NOT_SET')
+        if openai_key and openai_key != 'NOT_SET':
+            env_info['OPENAI_API_KEY'] = f"{openai_key[:10]}...{openai_key[-4:]}" if len(openai_key) > 14 else "SET_BUT_SHORT"
+        else:
+            env_info['OPENAI_API_KEY'] = 'NOT_SET'
+            
+        # Check other keys
+        claude_key = os.environ.get('CLAUDE_API_KEY', 'NOT_SET')
+        env_info['CLAUDE_API_KEY'] = 'SET' if claude_key and claude_key != 'NOT_SET' else 'NOT_SET'
+        
+        elevenlabs_key = os.environ.get('ELEVENLABS_API_KEY', 'NOT_SET')
+        env_info['ELEVENLABS_API_KEY'] = 'SET' if elevenlabs_key and elevenlabs_key != 'NOT_SET' else 'NOT_SET'
+        
+        wav2lip_key = os.environ.get('WAV2LIP_API_KEY', 'NOT_SET')
+        env_info['WAV2LIP_API_KEY'] = 'SET' if wav2lip_key and wav2lip_key != 'NOT_SET' else 'NOT_SET'
+        
+        # R2 config
+        env_info['R2_BUCKET_NAME'] = os.environ.get('R2_BUCKET_NAME', 'NOT_SET')
+        env_info['R2_ENDPOINT_URL'] = os.environ.get('R2_ENDPOINT_URL', 'NOT_SET')
+        
+        return jsonify({
+            'success': True,
+            'environment_variables': env_info,
+            'openai_client_status': 'CONFIGURED' if openai_client else 'NOT_CONFIGURED'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 # For Vercel serverless deployment
 from werkzeug.middleware.proxy_fix import ProxyFix
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
