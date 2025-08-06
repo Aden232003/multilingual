@@ -1358,6 +1358,82 @@ def check_lip_sync_status(job_id):
             'traceback': traceback.format_exc()
         }), 500
 
+@app.route('/api/test-r2-access', methods=['GET', 'POST'])
+def test_r2_access():
+    """Test R2 bucket access and public URL configuration"""
+    try:
+        # List files in R2
+        response = r2_client.list_objects_v2(Bucket=R2_BUCKET_NAME)
+        if 'Contents' not in response:
+            return jsonify({
+                'success': False,
+                'error': 'No files found in R2 bucket'
+            }), 404
+        
+        files = []
+        for obj in response['Contents']:
+            filename = obj['Key']
+            
+            # Test different URL formats
+            direct_url = f"{R2_PUBLIC_URL}/{filename}"
+            presigned_url = get_presigned_url(filename, expiration=3600)
+            
+            # Test accessibility
+            direct_status = 'unknown'
+            presigned_status = 'unknown'
+            
+            try:
+                direct_test = requests.head(direct_url, timeout=10)
+                direct_status = direct_test.status_code
+            except Exception as e:
+                direct_status = f"error: {str(e)}"
+            
+            try:
+                if presigned_url:
+                    presigned_test = requests.head(presigned_url, timeout=10)
+                    presigned_status = presigned_test.status_code
+                else:
+                    presigned_status = "no_url_generated"
+            except Exception as e:
+                presigned_status = f"error: {str(e)}"
+            
+            files.append({
+                'filename': filename,
+                'size': obj['Size'],
+                'direct_url': direct_url,
+                'direct_status': direct_status,
+                'presigned_url': presigned_url[:100] + '...' if presigned_url else None,
+                'presigned_status': presigned_status
+            })
+            
+            # Only test first 3 files to avoid timeout
+            if len(files) >= 3:
+                break
+        
+        # Check bucket policy
+        try:
+            bucket_policy = r2_client.get_bucket_policy(Bucket=R2_BUCKET_NAME)
+            policy_info = "Policy exists"
+        except Exception as e:
+            policy_info = f"No policy or error: {str(e)}"
+        
+        return jsonify({
+            'success': True,
+            'bucket_name': R2_BUCKET_NAME,
+            'public_url_base': R2_PUBLIC_URL,
+            'bucket_policy': policy_info,
+            'files_tested': files,
+            'message': 'R2 access test completed'
+        })
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
 @app.route('/api/debug-env')
 def debug_env():
     """Debug endpoint to check environment variables (masking sensitive data)"""
