@@ -52,8 +52,18 @@ R2_ENDPOINT_URL = os.environ.get('R2_ENDPOINT_URL', 'https://e9489e6c0f22eef2c0b
 R2_PUBLIC_URL = os.environ.get('R2_PUBLIC_URL', 'https://e9489e6c0f22eef2c0ba8b8d3981bab5.r2.cloudflarestorage.com/t6d')  # Direct R2 access
 
 # Initialize API clients
-openai.api_key = OPENAI_API_KEY
-claude_client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
+if OPENAI_API_KEY:
+    openai.api_key = OPENAI_API_KEY
+    print("✅ OpenAI API key configured")
+else:
+    print("❌ OpenAI API key not found")
+
+if CLAUDE_API_KEY:
+    claude_client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
+    print("✅ Claude API key configured")
+else:
+    print("❌ Claude API key not found")
+    claude_client = None
 
 # In-memory workflow state (in production, use Redis or database)
 workflow_state = {
@@ -740,6 +750,82 @@ def test_workflow_status():
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/test-transcription', methods=['POST'])
+def test_transcription():
+    """Test transcription with current audio file"""
+    try:
+        audio_file = workflow_state.get('audioFile')
+        print(f"Testing transcription with audio file: {audio_file}")
+        
+        if not audio_file:
+            return jsonify({
+                'success': False,
+                'error': 'No audio file in workflow state',
+                'workflow_state': workflow_state
+            }), 400
+        
+        # Test R2 download first
+        filename = audio_file.split('/')[-1]
+        print(f"Attempting to download: {filename}")
+        
+        temp_path = download_file_from_r2(filename)
+        if not temp_path:
+            return jsonify({
+                'success': False,
+                'error': f'Failed to download {filename} from R2',
+                'audio_file': audio_file,
+                'filename': filename
+            }), 500
+        
+        # Check downloaded file
+        file_size = os.path.getsize(temp_path)
+        print(f"Downloaded file size: {file_size} bytes")
+        
+        if file_size == 0:
+            os.unlink(temp_path)
+            return jsonify({
+                'success': False,
+                'error': 'Downloaded audio file is empty',
+                'file_size': file_size
+            }), 500
+        
+        # Test OpenAI API
+        print("Testing OpenAI Whisper...")
+        try:
+            with open(temp_path, 'rb') as audio:
+                response = openai.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio,
+                    response_format="text"
+                )
+            
+            os.unlink(temp_path)  # Clean up
+            
+            return jsonify({
+                'success': True,
+                'transcript': response,
+                'file_size': file_size,
+                'message': 'Transcription test successful'
+            })
+            
+        except Exception as openai_error:
+            os.unlink(temp_path)  # Clean up
+            return jsonify({
+                'success': False,
+                'error': f'OpenAI API error: {str(openai_error)}',
+                'file_size': file_size
+            }), 500
+        
+    except Exception as e:
+        print(f"Test transcription error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
 
 # For Vercel serverless deployment
 from werkzeug.middleware.proxy_fix import ProxyFix
