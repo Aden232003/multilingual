@@ -448,54 +448,34 @@ class Wav2LipSync:
         try:
             print(f"Starting lip sync for {language}: video={video_url}, audio={audio_url}")
             
-            # Download files from R2 for processing
-            video_filename = video_url.split('/')[-1]
-            audio_filename = audio_url.split('/')[-1]
+            # Verify URLs are accessible
+            print(f"Using R2 URLs directly - no file download needed")
             
-            print(f"Downloading files: video={video_filename}, audio={audio_filename}")
-            video_temp_path = download_file_from_r2(video_filename)
-            audio_temp_path = download_file_from_r2(audio_filename)
-            
-            if not video_temp_path:
-                print(f"Failed to download video file: {video_filename}")
-                return None
-            if not audio_temp_path:
-                print(f"Failed to download audio file: {audio_filename}")
-                return None
-                
-            print(f"Files downloaded: video={video_temp_path}, audio={audio_temp_path}")
-            
-            # Check file sizes
-            video_size = os.path.getsize(video_temp_path)
-            audio_size = os.path.getsize(audio_temp_path)
-            print(f"File sizes: video={video_size}B, audio={audio_size}B")
-            
-            url = "https://api.sync.so/v1/sync"
+            # New Sync.so API format - uses URLs not file uploads
+            url = "https://api.sync.so/generations"
             headers = {
-                "Authorization": f"Bearer {WAV2LIP_API_KEY}"
-                # Don't set Content-Type for multipart/form-data - requests will handle it
+                "Authorization": f"Bearer {WAV2LIP_API_KEY}",
+                "Content-Type": "application/json"
             }
             
-            print("Sending lip sync request to Wav2Lip API...")
+            print("Sending lip sync request to Sync.so API...")
             
-            # Upload files and get job ID
-            with open(video_temp_path, 'rb') as video_file, open(audio_temp_path, 'rb') as audio_file:
-                files = {
-                    'video': video_file,
-                    'audio': audio_file
-                }
-                data = {
-                    'mode': 'cut_off'
-                }
+            # Use R2 URLs directly instead of uploading files
+            request_data = {
+                "input": [
+                    {"type": "video", "url": video_url},
+                    {"type": "audio", "url": audio_url}
+                ],
+                "model": "lipsync-2",
+                "options": {"sync_mode": "cut_off"},
+                "outputFileName": f"lipsync_{language}"
+            }
+            
+            print(f"Request data: {request_data}")
+            response = requests.post(url, headers=headers, json=request_data)
                 
-                response = requests.post(url, files=files, data=data, headers=headers)
-                
-            print(f"Wav2Lip API response: status={response.status_code}")
+            print(f"Sync.so API response: status={response.status_code}")
             print(f"Response content: {response.text}")
-                
-            # Clean up temp files
-            os.unlink(video_temp_path)
-            os.unlink(audio_temp_path)
                 
             if response.status_code == 200 or response.status_code == 201:
                 result = response.json()
@@ -1208,31 +1188,41 @@ def test_wav2lip_api():
             "Authorization": f"Bearer {WAV2LIP_API_KEY}"
         }
         
-        # Test different possible endpoints
+        # Test different possible endpoints with both GET and POST
         endpoints_to_test = [
             "https://api.sync.so/v1/sync",
             "https://api.sync.so/v1/lip-sync", 
             "https://api.sync.so/sync",
-            "https://api.sync.so/lip-sync",
-            "https://sync.so/api/v1/sync",
-            "https://sync.so/api/v1/lip-sync"
+            "https://api.sync.so/lip-sync"
         ]
         
         results = {}
         
         for endpoint in endpoints_to_test:
+            results[endpoint] = {}
+            
+            # Test GET
             try:
-                print(f"Testing endpoint: {endpoint}")
+                print(f"Testing GET {endpoint}")
                 response = requests.get(endpoint, headers=headers, timeout=10)
-                results[endpoint] = {
+                results[endpoint]['GET'] = {
                     'status_code': response.status_code,
-                    'response': response.text[:500] if response.text else 'No content',
-                    'headers': dict(response.headers)
+                    'response': response.text[:500] if response.text else 'No content'
                 }
             except Exception as e:
-                results[endpoint] = {
-                    'error': str(e)
+                results[endpoint]['GET'] = {'error': str(e)}
+            
+            # Test POST with minimal data
+            try:
+                print(f"Testing POST {endpoint}")
+                test_data = {'test': True}
+                response = requests.post(endpoint, headers=headers, json=test_data, timeout=10)
+                results[endpoint]['POST'] = {
+                    'status_code': response.status_code,
+                    'response': response.text[:500] if response.text else 'No content'
                 }
+            except Exception as e:
+                results[endpoint]['POST'] = {'error': str(e)}
         
         return jsonify({
             'success': True,
@@ -1265,9 +1255,7 @@ def check_lip_sync_status(job_id):
         
         # Try different possible status endpoints
         possible_urls = [
-            f"https://api.sync.so/v1/sync/{job_id}",
-            f"https://api.sync.so/v1/jobs/{job_id}",
-            f"https://api.sync.so/v1/status/{job_id}",
+            f"https://api.sync.so/generations/{job_id}",
             f"https://api.sync.so/jobs/{job_id}",
             f"https://api.sync.so/status/{job_id}"
         ]
