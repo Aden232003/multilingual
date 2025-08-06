@@ -352,6 +352,8 @@ class TranscriptExtractor:
 
 class ClaudeTranslator:
     def translate_transcript(self, transcript, duration):
+        import json  # Import at function level to avoid scope issues
+        
         try:
             if not claude_client:
                 print("Claude client not configured")
@@ -372,7 +374,7 @@ class ClaudeTranslator:
             
             print("Sending request to Claude API...")
             response = claude_client.messages.create(
-                model="claude-3-sonnet-20240229",
+                model="claude-sonnet-4-20250514",
                 max_tokens=2000,
                 messages=[{"role": "user", "content": prompt}]
             )
@@ -381,7 +383,6 @@ class ClaudeTranslator:
             print(f"Raw response: {response.content[0].text[:500]}...")  # First 500 chars
             
             # Parse JSON response
-            import json
             response_text = response.content[0].text.strip()
             
             # Try to extract JSON if it's wrapped in markdown
