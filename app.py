@@ -17,6 +17,10 @@ import boto3
 from botocore.exceptions import ClientError
 import uuid
 from datetime import datetime
+try:
+    from moviepy.editor import VideoFileClip
+except ImportError:
+    VideoFileClip = None
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
@@ -50,6 +54,17 @@ R2_PUBLIC_URL = os.environ.get('R2_PUBLIC_URL', 'https://e9489e6c0f22eef2c0ba8b8
 # Initialize API clients
 openai.api_key = OPENAI_API_KEY
 claude_client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
+
+# In-memory workflow state (in production, use Redis or database)
+workflow_state = {
+    'audioFile': None,
+    'videoFile': None,
+    'transcript': None,
+    'translations': {},
+    'audioFiles': {},
+    'videoDuration': None,
+    'audioSize': None
+}
 
 # Initialize R2 client (S3-compatible)
 r2_client = boto3.client(
@@ -138,6 +153,51 @@ def get_presigned_url(filename, expiration=3600):
     except ClientError as e:
         print(f"Presigned URL error: {e}")
         return None
+
+def extract_audio_from_video(video_url):
+    """Extract audio from video file and upload to R2"""
+    try:
+        if not VideoFileClip:
+            print("MoviePy not available for video processing")
+            return None, None
+            
+        # Download video from R2
+        video_filename = video_url.split('/')[-1]
+        video_temp_path = download_file_from_r2(video_filename)
+        
+        if not video_temp_path:
+            return None, None
+            
+        # Extract audio using MoviePy
+        with VideoFileClip(video_temp_path) as video:
+            duration_seconds = video.duration
+            duration_formatted = f"{int(duration_seconds//60):02d}:{int(duration_seconds%60):02d}"
+            
+            # Create temporary audio file
+            audio_temp = tempfile.NamedTemporaryFile(suffix='.mp3', delete=False)
+            audio_temp.close()
+            
+            # Extract audio
+            video.audio.write_audiofile(audio_temp.name, verbose=False, logger=None)
+        
+        # Upload extracted audio to R2
+        audio_filename = video_filename.rsplit('.', 1)[0] + '_audio.mp3'
+        with open(audio_temp.name, 'rb') as audio_file:
+            audio_url, r2_filename = upload_file_to_r2(
+                audio_file, 
+                audio_filename, 
+                content_type='audio/mpeg'
+            )
+        
+        # Clean up temp files
+        os.unlink(video_temp_path)
+        os.unlink(audio_temp.name)
+        
+        return audio_url, duration_formatted
+        
+    except Exception as e:
+        print(f"Audio extraction error: {e}")
+        return None, None
 
 class TranscriptExtractor:
     def transcribe_audio(self, audio_url_or_path):
@@ -306,14 +366,7 @@ def index():
 @app.route('/api/workflow-status')
 def get_workflow_status():
     """Get current workflow status"""
-    status = {
-        'audioFile': None,
-        'transcript': None,
-        'translations': {},
-        'audioFiles': {},
-        'videoFile': None
-    }
-    return jsonify(status)
+    return jsonify(workflow_state)
 
 @app.route('/api/check-existing-files')
 def check_existing_files():
@@ -385,15 +438,33 @@ def upload_step_file():
         # Process based on step
         if step == '1':
             if file_ext in {'.mp4', '.avi', '.mov'}:
+                # Video file - store and extract audio
+                workflow_state['videoFile'] = public_url
                 result['videoFile'] = public_url
-                result['duration'] = '00:30'  # Could extract real duration
+                
+                print("Extracting audio from video...")
+                audio_url, duration = extract_audio_from_video(public_url)
+                
+                if audio_url:
+                    workflow_state['audioFile'] = audio_url
+                    workflow_state['videoDuration'] = duration
+                    result['audioFile'] = audio_url
+                    result['duration'] = duration
+                    print(f"Audio extracted: {audio_url}")
+                else:
+                    result['duration'] = '00:30'  # Default if extraction fails
+                    
             else:
+                # Audio file - store directly
+                workflow_state['audioFile'] = public_url
                 result['audioFile'] = public_url
+                
         elif step == '4' or step == '5':
             result['audioFile'] = public_url
             result['language'] = language
         
         print(f"Upload successful: {result}")
+        print(f"Workflow state updated: {workflow_state}")
         return jsonify(result)
         
     except Exception as e:
@@ -404,14 +475,19 @@ def upload_step_file():
 def transcribe_audio():
     """Transcribe audio file using OpenAI Whisper"""
     data = request.get_json()
-    audio_file = data.get('audioFile')
+    audio_file = data.get('audioFile') or workflow_state.get('audioFile')
     
     if not audio_file:
-        return jsonify({'error': 'No audio file provided'}), 400
+        return jsonify({'error': 'No audio file available. Please complete Step 1 first.'}), 400
     
     try:
+        print(f"Starting transcription for: {audio_file}")
         transcript = transcript_extractor.transcribe_audio(audio_file)
+        
         if transcript:
+            # Store transcript in workflow state
+            workflow_state['transcript'] = transcript
+            
             return jsonify({
                 'transcript': transcript,
                 'length': len(transcript),
@@ -420,6 +496,7 @@ def transcribe_audio():
         else:
             return jsonify({'error': 'Transcription failed'}), 500
     except Exception as e:
+        print(f"Transcription error: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/save-transcript', methods=['POST'])
@@ -437,14 +514,20 @@ def save_transcript():
 def translate_transcript():
     """Translate transcript using Claude"""
     data = request.get_json()
-    transcript = data.get('transcript')
+    transcript = data.get('transcript') or workflow_state.get('transcript')
     
     if not transcript:
-        return jsonify({'error': 'No transcript provided'}), 400
+        return jsonify({'error': 'No transcript available. Please complete Step 2 first.'}), 400
     
     try:
-        translations = translator.translate_transcript(transcript, '00:30')
+        duration = workflow_state.get('videoDuration', '00:30')
+        print(f"Starting translation for transcript of {len(transcript)} characters")
+        
+        translations = translator.translate_transcript(transcript, duration)
         if translations:
+            # Store translations in workflow state
+            workflow_state['translations'] = translations
+            
             return jsonify({
                 'translations': translations,
                 'files': list(translations.keys())
@@ -452,6 +535,7 @@ def translate_transcript():
         else:
             return jsonify({'error': 'Translation failed'}), 500
     except Exception as e:
+        print(f"Translation error: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/save-translations', methods=['POST'])
@@ -469,41 +553,60 @@ def save_translations():
 def voice_synthesis():
     """Generate voice audio using ElevenLabs and store in R2"""
     data = request.get_json()
-    translations = data.get('translations', {})
+    translations = data.get('translations', {}) or workflow_state.get('translations', {})
+    
+    if not translations:
+        return jsonify({'error': 'No translations available. Please complete Step 3 first.'}), 400
     
     try:
         audio_files = {}
         
+        print(f"Starting voice synthesis for {len(translations)} languages")
+        
         # Process Hindi and Tamil with TTS
         for lang in ['hindi', 'tamil']:
             if lang in translations:
+                print(f"Generating {lang} audio...")
                 audio_url, r2_filename = tts.text_to_speech(translations[lang], lang)
                 if audio_url:
                     audio_files[lang] = audio_url
+                    print(f"{lang} audio generated: {audio_url}")
+        
+        # Store audio files in workflow state
+        workflow_state['audioFiles'].update(audio_files)
         
         return jsonify({'audioFiles': audio_files})
     except Exception as e:
+        print(f"Voice synthesis error: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/lip-sync', methods=['POST'])
 def lip_sync_videos():
     """Create lip-synced videos using Wav2Lip with R2 storage"""
     data = request.get_json()
-    video_file = data.get('videoFile')
-    audio_files = data.get('audioFiles', {})
+    video_file = data.get('videoFile') or workflow_state.get('videoFile')
+    audio_files = data.get('audioFiles', {}) or workflow_state.get('audioFiles', {})
     
     if not video_file:
-        return jsonify({'error': 'No video file provided'}), 400
+        return jsonify({'error': 'No video file available. Please upload a video in Step 1.'}), 400
+        
+    if not audio_files:
+        return jsonify({'error': 'No audio files available. Please complete Step 4 first.'}), 400
     
     try:
         results = {}
         
+        print(f"Starting lip sync for {len(audio_files)} languages")
+        
         for lang, audio_url in audio_files.items():
+            print(f"Processing {lang} lip sync...")
             result = lip_sync.sync_video_with_audio(video_file, audio_url, lang)
             results[lang] = result or {'status': 'failed'}
+            print(f"{lang} lip sync result: {result}")
         
         return jsonify({'results': results})
     except Exception as e:
+        print(f"Lip sync error: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/download/<filename>')
