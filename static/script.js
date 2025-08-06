@@ -431,6 +431,7 @@ class ModularWorkflowApp {
         }
         
         this.updateProgress(5, 'processing');
+        this.showLipSyncProgress('Submitting lip sync jobs...');
         
         try {
             const response = await fetch('/api/lip-sync', {
@@ -445,15 +446,119 @@ class ModularWorkflowApp {
             const result = await response.json();
             
             if (response.ok) {
-                this.showStepOutput(5, result);
-                this.markStepCompleted(5);
+                // Store job IDs and start polling
+                this.jobStatus = result.results || {};
+                this.showLipSyncProgress('Jobs submitted successfully! Processing videos (3-5 minutes)...');
+                this.startJobPolling();
             } else {
                 this.showError(result.error);
+                this.updateProgress(5, 'failed');
             }
         } catch (error) {
             this.showError('Lip sync failed: ' + error.message);
-        } finally {
+            this.updateProgress(5, 'failed');
+        }
+    }
+
+    showLipSyncProgress(message) {
+        const videoResults = document.getElementById('video-results');
+        if (videoResults) {
+            videoResults.innerHTML = `
+                <div class="processing-status">
+                    <div class="spinner"></div>
+                    <h3>${message}</h3>
+                    <p>Please be patient, this process takes 3-5 minutes per language.</p>
+                    <p>Status updates every 30 seconds...</p>
+                </div>
+            `;
+        }
+        
+        // Show output area
+        const outputArea = document.getElementById('output-area-5');
+        if (outputArea) {
+            outputArea.style.display = 'block';
+        }
+    }
+
+    startJobPolling() {
+        // Clear any existing polling
+        this.stopJobPolling();
+        
+        // Start polling every 30 seconds
+        this.pollingInterval = setInterval(() => {
+            this.checkJobStatus();
+        }, 30000);
+        
+        // Check immediately
+        this.checkJobStatus();
+    }
+
+    async checkJobStatus() {
+        let allCompleted = true;
+        let anyProcessing = false;
+        const updatedResults = {};
+
+        for (const [language, jobInfo] of Object.entries(this.jobStatus)) {
+            if (jobInfo.job_id && (jobInfo.status === 'submitted' || jobInfo.status === 'processing')) {
+                try {
+                    const response = await fetch(`/api/check-lip-sync-status/${jobInfo.job_id}`);
+                    const result = await response.json();
+                    
+                    if (response.ok && result.success) {
+                        const status = result.status || result.result?.status || 'processing';
+                        updatedResults[language] = {
+                            ...jobInfo,
+                            status: status,
+                            output_url: result.result?.output_url || result.result?.download_url,
+                            progress: result.result?.progress || 'processing'
+                        };
+                        
+                        if (status !== 'completed') {
+                            allCompleted = false;
+                            if (status === 'processing') {
+                                anyProcessing = true;
+                            }
+                        }
+                    } else {
+                        // Keep current status if API call fails
+                        updatedResults[language] = jobInfo;
+                        allCompleted = false;
+                        anyProcessing = true;
+                    }
+                } catch (error) {
+                    console.log(`Error checking ${language} job:`, error);
+                    updatedResults[language] = jobInfo;
+                    allCompleted = false;
+                    anyProcessing = true;
+                }
+            } else {
+                updatedResults[language] = jobInfo;
+                if (jobInfo.status !== 'completed') {
+                    allCompleted = false;
+                }
+            }
+        }
+
+        // Update job status
+        this.jobStatus = updatedResults;
+        
+        // Update UI with live status
+        this.updateVideoResultsWithPolling(updatedResults);
+        
+        // Stop polling if all jobs are complete
+        if (allCompleted) {
+            this.stopJobPolling();
             this.updateProgress(5, 'completed');
+            this.markStepCompleted(5);
+        } else if (anyProcessing) {
+            this.updateProgress(5, 'processing');
+        }
+    }
+
+    stopJobPolling() {
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+            this.pollingInterval = null;
         }
     }
     
@@ -657,6 +762,74 @@ class ModularWorkflowApp {
                 `;
                 videoResults.appendChild(card);
             });
+        }
+    }
+
+    updateVideoResultsWithPolling(results) {
+        const videoResults = document.getElementById('video-results');
+        if (videoResults) {
+            videoResults.innerHTML = '';
+            
+            Object.entries(results).forEach(([language, result]) => {
+                const card = document.createElement('div');
+                card.className = 'result-card';
+                
+                let statusIcon = '🔄';
+                let statusText = 'Processing...';
+                let statusClass = 'processing';
+                let actionContent = '<div class="processing-spinner"></div>';
+                
+                if (result.status === 'completed') {
+                    statusIcon = '✅';
+                    statusText = 'Ready';
+                    statusClass = 'completed';
+                    const downloadUrl = result.output_url || '#';
+                    actionContent = `
+                        <a href="${downloadUrl}" target="_blank" class="btn-accent">
+                            📥 Download Video
+                        </a>
+                    `;
+                } else if (result.status === 'failed') {
+                    statusIcon = '❌';
+                    statusText = 'Failed';
+                    statusClass = 'failed';
+                    actionContent = '<p>Processing failed</p>';
+                } else if (result.status === 'submitted') {
+                    statusIcon = '⏳';
+                    statusText = 'Queued';
+                    statusClass = 'queued';
+                    actionContent = '<p>Job submitted, waiting to start...</p>';
+                } else {
+                    statusIcon = '🔄';
+                    statusText = 'Processing';
+                    statusClass = 'processing';
+                    actionContent = '<p>Creating lip-synced video...</p>';
+                }
+                
+                card.innerHTML = `
+                    <h3>${statusIcon} ${language.toUpperCase()}</h3>
+                    <p class="status-text ${statusClass}">${statusText}</p>
+                    <div class="job-info">
+                        <small>Job ID: ${result.job_id || 'N/A'}</small>
+                    </div>
+                    ${actionContent}
+                `;
+                videoResults.appendChild(card);
+            });
+            
+            // Add overall status message
+            const processingCount = Object.values(results).filter(r => 
+                r.status === 'processing' || r.status === 'submitted'
+            ).length;
+            
+            if (processingCount > 0) {
+                const statusDiv = document.createElement('div');
+                statusDiv.className = 'overall-status';
+                statusDiv.innerHTML = `
+                    <p>⏱️ ${processingCount} job(s) still processing. Next update in 30 seconds...</p>
+                `;
+                videoResults.appendChild(statusDiv);
+            }
         }
     }
     
