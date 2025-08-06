@@ -802,7 +802,7 @@ def download_audio():
         return jsonify({'error': str(e)}), 500
 
 # Test endpoints for workflow validation
-@app.route('/api/test-translation', methods=['POST'])
+@app.route('/api/test-translation', methods=['GET', 'POST'])
 def test_translation():
     """Test translation functionality independently"""
     try:
@@ -822,7 +822,7 @@ def test_translation():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/test-voice-synthesis', methods=['POST'])
+@app.route('/api/test-voice-synthesis', methods=['GET', 'POST'])
 def test_voice_synthesis():
     """Test voice synthesis functionality independently"""
     try:
