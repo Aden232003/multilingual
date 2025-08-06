@@ -76,12 +76,16 @@ r2_client = boto3.client(
 )
 
 # R2 Storage Helper Functions
-def upload_file_to_r2(file_obj, filename, content_type=None):
+def upload_file_to_r2(file_obj, filename, content_type=None, simple_name=False):
     """Upload file to R2 and return public URL"""
     try:
-        # Generate unique filename with timestamp
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        unique_filename = f"{timestamp}_{str(uuid.uuid4())[:8]}_{filename}"
+        if simple_name:
+            # Use simple filename for processed files
+            unique_filename = filename
+        else:
+            # Generate unique filename with timestamp for uploads
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            unique_filename = f"{timestamp}_{str(uuid.uuid4())[:8]}_{filename}"
         
         # Upload to R2
         extra_args = {}
@@ -103,12 +107,16 @@ def upload_file_to_r2(file_obj, filename, content_type=None):
         print(f"R2 upload error: {e}")
         return None, None
 
-def upload_bytes_to_r2(data, filename, content_type=None):
+def upload_bytes_to_r2(data, filename, content_type=None, simple_name=False):
     """Upload bytes data to R2 and return public URL"""
     try:
-        # Generate unique filename with timestamp
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        unique_filename = f"{timestamp}_{str(uuid.uuid4())[:8]}_{filename}"
+        if simple_name:
+            # Use simple filename for processed files
+            unique_filename = filename
+        else:
+            # Generate unique filename with timestamp for uploads
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            unique_filename = f"{timestamp}_{str(uuid.uuid4())[:8]}_{filename}"
         
         # Upload to R2
         extra_args = {}
@@ -180,13 +188,17 @@ def extract_audio_from_video(video_url):
             # Extract audio
             video.audio.write_audiofile(audio_temp.name, verbose=False, logger=None)
         
-        # Upload extracted audio to R2
-        audio_filename = video_filename.rsplit('.', 1)[0] + '_audio.mp3'
+        # Upload extracted audio to R2 with simple filename
+        # Extract original filename from the complex R2 filename
+        original_name = video_filename.split('_')[-1] if '_' in video_filename else video_filename
+        audio_filename = original_name.rsplit('.', 1)[0] + '_audio.mp3'
+        
         with open(audio_temp.name, 'rb') as audio_file:
             audio_url, r2_filename = upload_file_to_r2(
                 audio_file, 
                 audio_filename, 
-                content_type='audio/mpeg'
+                content_type='audio/mpeg',
+                simple_name=True  # Use simple filename for processed files
             )
         
         # Clean up temp files
@@ -202,23 +214,43 @@ def extract_audio_from_video(video_url):
 class TranscriptExtractor:
     def transcribe_audio(self, audio_url_or_path):
         try:
+            print(f"Starting transcription for: {audio_url_or_path}")
+            
             # If it's a URL, download first
             if audio_url_or_path.startswith('http'):
                 # Download from R2 or extract filename from URL
                 filename = audio_url_or_path.split('/')[-1]
+                print(f"Downloading audio file: {filename}")
                 temp_path = download_file_from_r2(filename)
                 if not temp_path:
+                    print("Failed to download audio file from R2")
                     return None
                 audio_path = temp_path
+                print(f"Downloaded to: {audio_path}")
             else:
                 audio_path = audio_url_or_path
             
+            # Check if file exists and is readable
+            if not os.path.exists(audio_path):
+                print(f"Audio file does not exist: {audio_path}")
+                return None
+                
+            file_size = os.path.getsize(audio_path)
+            print(f"Audio file size: {file_size} bytes")
+            
+            if file_size == 0:
+                print("Audio file is empty")
+                return None
+            
+            print("Sending to OpenAI Whisper...")
             with open(audio_path, 'rb') as audio_file:
                 response = openai.audio.transcriptions.create(
                     model="whisper-1",
                     file=audio_file,
                     response_format="text"
                 )
+                
+            print(f"Transcription successful: {len(response) if response else 0} characters")
                 
             # Clean up temp file if we downloaded it
             if audio_url_or_path.startswith('http'):
@@ -227,6 +259,8 @@ class TranscriptExtractor:
             return response
         except Exception as e:
             print(f"Transcription error: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
 class ClaudeTranslator:
@@ -622,6 +656,90 @@ def download_file(filename):
             return jsonify({'error': 'File not found'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/download-audio')
+def download_audio():
+    """Download the extracted audio file from workflow state"""
+    try:
+        audio_file = workflow_state.get('audioFile')
+        if not audio_file:
+            return jsonify({'error': 'No audio file available'}), 404
+            
+        # Extract filename from URL for download
+        filename = audio_file.split('/')[-1]
+        presigned_url = get_presigned_url(filename, expiration=3600)
+        
+        if presigned_url:
+            return redirect(presigned_url)
+        else:
+            return jsonify({'error': 'Audio file not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Test endpoints for workflow validation
+@app.route('/api/test-translation', methods=['POST'])
+def test_translation():
+    """Test translation functionality independently"""
+    try:
+        test_transcript = "Hello, this is a test transcript for the multilingual video workflow application."
+        print("Testing Claude translation...")
+        
+        translations = translator.translate_transcript(test_transcript, '00:30')
+        if translations:
+            return jsonify({
+                'success': True,
+                'test_transcript': test_transcript,
+                'translations': translations,
+                'message': 'Translation test successful'
+            })
+        else:
+            return jsonify({'success': False, 'error': 'Translation test failed'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/test-voice-synthesis', methods=['POST'])
+def test_voice_synthesis():
+    """Test voice synthesis functionality independently"""
+    try:
+        test_translations = {
+            'hindi': 'नमस्ते, यह बहुभाषी वीडियो वर्कफ़्लो एप्लिकेशन के लिए एक परीक्षण ट्रांसक्रिप्ट है।',
+            'tamil': 'வணக்கம், இது பன்மொழி வீடியோ பணிப்பாலம் பயன்பாட்டிற்கான ஒரு சோதனை டிரான்ஸ்கிரிப்ட் ஆகும்।'
+        }
+        
+        print("Testing ElevenLabs voice synthesis...")
+        audio_files = {}
+        
+        for lang in ['hindi', 'tamil']:
+            if lang in test_translations:
+                print(f"Generating {lang} test audio...")
+                audio_url, r2_filename = tts.text_to_speech(test_translations[lang], lang)
+                if audio_url:
+                    audio_files[lang] = audio_url
+        
+        if audio_files:
+            return jsonify({
+                'success': True,
+                'test_translations': test_translations,
+                'audioFiles': audio_files,
+                'message': 'Voice synthesis test successful'
+            })
+        else:
+            return jsonify({'success': False, 'error': 'Voice synthesis test failed'}), 500
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/test-workflow-status')
+def test_workflow_status():
+    """Test endpoint to check current workflow state"""
+    try:
+        return jsonify({
+            'success': True,
+            'workflow_state': workflow_state,
+            'message': 'Workflow status retrieved successfully'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # For Vercel serverless deployment
 from werkzeug.middleware.proxy_fix import ProxyFix
