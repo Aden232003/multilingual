@@ -50,6 +50,7 @@ R2_SECRET_ACCESS_KEY = os.environ.get('R2_SECRET_ACCESS_KEY')
 R2_BUCKET_NAME = os.environ.get('R2_BUCKET_NAME', 't6d')
 R2_ENDPOINT_URL = os.environ.get('R2_ENDPOINT_URL', 'https://e9489e6c0f22eef2c0ba8b8d3981bab5.r2.cloudflarestorage.com')
 R2_PUBLIC_URL = os.environ.get('R2_PUBLIC_URL', 'https://e9489e6c0f22eef2c0ba8b8d3981bab5.r2.cloudflarestorage.com/t6d')  # Direct R2 access
+R2_DEV_URL = os.environ.get('R2_DEV_URL', '')  # R2.dev public URL if configured
 
 # Initialize API clients
 if OPENAI_API_KEY:
@@ -364,12 +365,22 @@ class ClaudeTranslator:
 
             Original: {transcript}
 
-            Provide translations that:
+            IMPORTANT: Provide translations that:
             1. Maintain the original meaning and tone
-            2. Use culturally appropriate expressions
+            2. Use culturally appropriate expressions  
             3. Keep the same approximate length for lip sync
+            4. MUST use native scripts - Hindi in Devanagari (हिंदी), Tamil in Tamil script (தமிழ்), Telugu in Telugu script (తెలుగు), Gujarati in Gujarati script (ગુજરાતી)
+            5. DO NOT use romanized text or English letters - use proper native scripts only
 
             Return as JSON with keys: hindi, tamil, gujarati, telugu
+
+            Example format:
+            {
+                "hindi": "नमस्कार, यह हिंदी में है",
+                "tamil": "வணக்கம், இது தமிழில் உள்ளது", 
+                "gujarati": "નમસ્કાર, આ ગુજરાતીમાં છે",
+                "telugu": "నమస్కారం, ఇది తెలుగులో ఉంది"
+            }
             """
             
             print("Sending request to Claude API...")
