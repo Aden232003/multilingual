@@ -743,9 +743,20 @@ def test_voice_synthesis():
 def test_workflow_status():
     """Test endpoint to check current workflow state"""
     try:
+        # Also check R2 bucket contents
+        r2_files = []
+        try:
+            response = r2_client.list_objects_v2(Bucket=R2_BUCKET_NAME)
+            if 'Contents' in response:
+                r2_files = [obj['Key'] for obj in response['Contents']]
+        except Exception as r2_error:
+            r2_files = [f"R2 Error: {str(r2_error)}"]
+            
         return jsonify({
             'success': True,
             'workflow_state': workflow_state,
+            'r2_files': r2_files,
+            'r2_bucket': R2_BUCKET_NAME,
             'message': 'Workflow status retrieved successfully'
         })
     except Exception as e:
@@ -825,6 +836,87 @@ def test_transcription():
             'success': False,
             'error': str(e),
             'traceback': traceback.format_exc()
+        }), 500
+
+@app.route('/api/test-transcribe-r2', methods=['GET', 'POST'])
+def test_transcribe_r2():
+    """Test transcription with any audio file found in R2"""
+    try:
+        # List R2 files and find an audio file
+        response = r2_client.list_objects_v2(Bucket=R2_BUCKET_NAME)
+        if 'Contents' not in response:
+            return jsonify({
+                'success': False,
+                'error': 'No files found in R2 bucket',
+                'bucket': R2_BUCKET_NAME
+            }), 404
+        
+        audio_files = []
+        for obj in response['Contents']:
+            filename = obj['Key']
+            if filename.endswith(('.mp3', '.wav', '.m4a')):
+                audio_files.append({
+                    'filename': filename,
+                    'size': obj['Size'],
+                    'last_modified': str(obj['LastModified'])
+                })
+        
+        if not audio_files:
+            return jsonify({
+                'success': False,
+                'error': 'No audio files found in R2 bucket',
+                'all_files': [obj['Key'] for obj in response['Contents']]
+            }), 404
+        
+        # Use the most recent audio file
+        latest_audio = sorted(audio_files, key=lambda x: x['last_modified'])[-1]
+        filename = latest_audio['filename']
+        
+        print(f"Testing transcription with R2 file: {filename}")
+        
+        # Download and transcribe
+        temp_path = download_file_from_r2(filename)
+        if not temp_path:
+            return jsonify({
+                'success': False,
+                'error': f'Failed to download {filename} from R2'
+            }), 500
+        
+        file_size = os.path.getsize(temp_path)
+        print(f"Downloaded file size: {file_size} bytes")
+        
+        # Test transcription
+        try:
+            with open(temp_path, 'rb') as audio:
+                response = openai.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio,
+                    response_format="text"
+                )
+            
+            os.unlink(temp_path)  # Clean up
+            
+            return jsonify({
+                'success': True,
+                'filename': filename,
+                'file_size': file_size,
+                'transcript': response,
+                'message': 'R2 transcription test successful'
+            })
+            
+        except Exception as openai_error:
+            os.unlink(temp_path)  # Clean up
+            return jsonify({
+                'success': False,
+                'error': f'OpenAI API error: {str(openai_error)}',
+                'filename': filename,
+                'file_size': file_size
+            }), 500
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
         }), 500
 
 # For Vercel serverless deployment
