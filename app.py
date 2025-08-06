@@ -497,14 +497,26 @@ class Wav2LipSync:
             os.unlink(video_temp_path)
             os.unlink(audio_temp_path)
                 
-            if response.status_code == 200:
+            if response.status_code == 200 or response.status_code == 201:
                 result = response.json()
-                print(f"Lip sync job created successfully: {result}")
-                return {
-                    'status': 'processing',
-                    'job_id': result.get('id'),
-                    'output_url': result.get('output_url')
-                }
+                print(f"Lip sync job submitted successfully: {result}")
+                job_id = result.get('id') or result.get('job_id') or result.get('jobId')
+                
+                if job_id:
+                    # Return job info for polling - don't wait here
+                    return {
+                        'status': 'submitted',
+                        'job_id': job_id,
+                        'message': 'Job submitted successfully. Use job_id to check status.',
+                        'estimated_time': '3-5 minutes',
+                        'poll_url': f"/api/check-lip-sync-status/{job_id}"
+                    }
+                else:
+                    return {
+                        'status': 'submitted',
+                        'result': result,
+                        'message': 'Job submitted but no job_id returned'
+                    }
             else:
                 print(f"Wav2Lip API error: {response.status_code} - {response.text}")
                 return {
@@ -1233,6 +1245,75 @@ def test_wav2lip_api():
         import traceback
         return jsonify({
             'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+@app.route('/api/check-lip-sync-status/<job_id>')
+def check_lip_sync_status(job_id):
+    """Check the status of a lip sync job"""
+    try:
+        if not WAV2LIP_API_KEY:
+            return jsonify({
+                'success': False,
+                'error': 'WAV2LIP_API_KEY not configured'
+            }), 500
+            
+        headers = {
+            "Authorization": f"Bearer {WAV2LIP_API_KEY}"
+        }
+        
+        # Try different possible status endpoints
+        possible_urls = [
+            f"https://api.sync.so/v1/sync/{job_id}",
+            f"https://api.sync.so/v1/jobs/{job_id}",
+            f"https://api.sync.so/v1/status/{job_id}",
+            f"https://api.sync.so/jobs/{job_id}",
+            f"https://api.sync.so/status/{job_id}"
+        ]
+        
+        for url in possible_urls:
+            try:
+                print(f"Checking job status at: {url}")
+                response = requests.get(url, headers=headers, timeout=30)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    status = result.get('status', 'unknown')
+                    
+                    return jsonify({
+                        'success': True,
+                        'job_id': job_id,
+                        'status': status,
+                        'result': result,
+                        'endpoint_used': url,
+                        'message': f'Job status: {status}'
+                    })
+                elif response.status_code == 404:
+                    continue  # Try next endpoint
+                else:
+                    return jsonify({
+                        'success': False,
+                        'job_id': job_id,
+                        'error': f'Status check failed: {response.status_code} - {response.text}',
+                        'endpoint_used': url
+                    })
+                    
+            except Exception as e:
+                continue  # Try next endpoint
+        
+        return jsonify({
+            'success': False,
+            'job_id': job_id,
+            'error': 'Could not find working status endpoint',
+            'tried_endpoints': possible_urls
+        }), 404
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'job_id': job_id,
             'error': str(e),
             'traceback': traceback.format_exc()
         }), 500
