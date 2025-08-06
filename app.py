@@ -1447,6 +1447,64 @@ def test_r2_access():
             'traceback': traceback.format_exc()
         }), 500
 
+@app.route('/api/check-all-jobs', methods=['GET'])
+def check_all_jobs():
+    """Check status of recent lip sync jobs"""
+    try:
+        if not WAV2LIP_API_KEY:
+            return jsonify({
+                'success': False,
+                'error': 'WAV2LIP_API_KEY not configured'
+            }), 500
+            
+        headers = {
+            "x-api-key": WAV2LIP_API_KEY
+        }
+        
+        # Try to list recent jobs
+        list_endpoints = [
+            "https://api.sync.so/v2/generate",
+            "https://api.sync.so/v2/jobs",
+            "https://api.sync.so/jobs"
+        ]
+        
+        for endpoint in list_endpoints:
+            try:
+                print(f"Checking jobs at: {endpoint}")
+                response = requests.get(endpoint, headers=headers, timeout=30)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    return jsonify({
+                        'success': True,
+                        'endpoint': endpoint,
+                        'jobs': result,
+                        'message': 'Recent jobs retrieved successfully'
+                    })
+                elif response.status_code != 404:
+                    return jsonify({
+                        'success': False,
+                        'endpoint': endpoint,
+                        'error': f'Error {response.status_code}: {response.text}'
+                    })
+                    
+            except Exception as e:
+                continue
+        
+        return jsonify({
+            'success': False,
+            'error': 'Could not find working jobs list endpoint',
+            'tried_endpoints': list_endpoints
+        }), 404
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
 @app.route('/api/debug-env')
 def debug_env():
     """Debug endpoint to check environment variables (masking sensitive data)"""
