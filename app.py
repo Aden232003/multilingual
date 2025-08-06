@@ -353,6 +353,10 @@ class TranscriptExtractor:
 class ClaudeTranslator:
     def translate_transcript(self, transcript, duration):
         try:
+            if not claude_client:
+                print("Claude client not configured")
+                return None
+                
             prompt = f"""
             Translate this {duration} second video transcript into Hindi, Tamil, Gujarati, and Telugu with cultural relevance for Indian audiences:
 
@@ -366,16 +370,35 @@ class ClaudeTranslator:
             Return as JSON with keys: hindi, tamil, gujarati, telugu
             """
             
+            print("Sending request to Claude API...")
             response = claude_client.messages.create(
                 model="claude-3-sonnet-20240229",
                 max_tokens=2000,
                 messages=[{"role": "user", "content": prompt}]
             )
             
+            print(f"Claude API response received, content length: {len(response.content[0].text) if response.content else 0}")
+            print(f"Raw response: {response.content[0].text[:500]}...")  # First 500 chars
+            
             # Parse JSON response
             import json
-            translations = json.loads(response.content[0].text)
+            response_text = response.content[0].text.strip()
+            
+            # Try to extract JSON if it's wrapped in markdown
+            if response_text.startswith('```json'):
+                response_text = response_text.split('```json')[1].split('```')[0].strip()
+            elif response_text.startswith('```'):
+                response_text = response_text.split('```')[1].strip()
+            
+            print(f"Cleaned response for JSON parsing: {response_text[:200]}...")
+            translations = json.loads(response_text)
+            print(f"Successfully parsed translations: {list(translations.keys())}")
             return translations
+            
+        except json.JSONDecodeError as json_error:
+            print(f"JSON parsing error: {json_error}")
+            print(f"Response text: {response.content[0].text if 'response' in locals() else 'No response'}")
+            return None
         except Exception as e:
             print(f"Translation error: {e}")
             import traceback
