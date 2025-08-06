@@ -423,7 +423,7 @@ class ElevenLabsTTS:
     def text_to_speech(self, text, language):
         try:
             # Using Niharika voice for both Hindi and Tamil
-            voice_id = "21m00Tcm4TlvDq8ikWAM"  # Default voice, replace with Niharika's ID
+            voice_id = "mUpPaC2sgPs3LFRd9XC7"  # Niharika cloned voice
             
             url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
             headers = {
