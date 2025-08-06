@@ -361,26 +361,18 @@ class ClaudeTranslator:
                 return None
                 
             prompt = f"""
-            Translate this {duration} second video transcript into Hindi, Tamil, Gujarati, and Telugu with cultural relevance for Indian audiences:
+            Translate this video transcript into Hindi, Tamil, Gujarati, and Telugu:
 
             Original: {transcript}
 
-            IMPORTANT: Provide translations that:
-            1. Maintain the original meaning and tone
-            2. Use culturally appropriate expressions  
-            3. Keep the same approximate length for lip sync
-            4. MUST use native scripts - Hindi in Devanagari (हिंदी), Tamil in Tamil script (தமிழ்), Telugu in Telugu script (తెలుగు), Gujarati in Gujarati script (ગુજરાતી)
-            5. DO NOT use romanized text or English letters - use proper native scripts only
+            Requirements:
+            1. Use native scripts only - Hindi in Devanagari, Tamil in Tamil script, Telugu in Telugu script, Gujarati in Gujarati script
+            2. NO romanized text or English letters
+            3. Maintain original meaning and tone
+            4. Keep similar length for lip sync
 
-            Return as JSON with keys: hindi, tamil, gujarati, telugu
-
-            Example format:
-            {
-                "hindi": "नमस्कार, यह हिंदी में है",
-                "tamil": "வணக்கம், இது தமிழில் உள்ளது", 
-                "gujarati": "નમસ્કાર, આ ગુજરાતીમાં છે",
-                "telugu": "నమస్కారం, ఇది తెలుగులో ఉంది"
-            }
+            Return only valid JSON:
+            {{"hindi": "हिंदी में", "tamil": "தமிழில்", "gujarati": "ગુજરાતીમાં", "telugu": "తెలుగులో"}}
             """
             
             print("Sending request to Claude API...")
@@ -403,7 +395,17 @@ class ClaudeTranslator:
                 response_text = response_text.split('```')[1].strip()
             
             print(f"Cleaned response for JSON parsing: {response_text[:200]}...")
-            translations = json.loads(response_text)
+            
+            # Try to find JSON even if there's extra text
+            if '{' in response_text and '}' in response_text:
+                start = response_text.find('{')
+                end = response_text.rfind('}') + 1
+                json_part = response_text[start:end]
+                print(f"Extracted JSON part: {json_part[:200]}...")
+                translations = json.loads(json_part)
+            else:
+                translations = json.loads(response_text)
+                
             print(f"Successfully parsed translations: {list(translations.keys())}")
             return translations
             
