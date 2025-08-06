@@ -751,7 +751,7 @@ def test_workflow_status():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/test-transcription', methods=['POST'])
+@app.route('/api/test-transcription', methods=['GET', 'POST'])
 def test_transcription():
     """Test transcription with current audio file"""
     try:
