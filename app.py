@@ -7,6 +7,7 @@ Flask backend with real API integration
 import os
 import json
 import tempfile
+import time
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify, redirect
 from werkzeug.utils import secure_filename
@@ -546,32 +547,72 @@ class Wav2LipSync:
             }
             
             print(f"Request data: {request_data}")
-            response = requests.post(url, headers=headers, json=request_data)
-                
-            print(f"Sync.so API response: status={response.status_code}")
-            print(f"Response content: {response.text}")
-                
-            if response.status_code == 200 or response.status_code == 201:
-                result = response.json()
-                print(f"Lip sync job submitted successfully: {result}")
-                job_id = result.get('id') or result.get('job_id') or result.get('jobId')
-                
-                if job_id:
-                    # Return job info for polling - don't wait here
-                    return {
-                        'status': 'submitted',
-                        'job_id': job_id,
-                        'message': 'Job submitted successfully. Use job_id to check status.',
-                        'estimated_time': '3-5 minutes',
-                        'poll_url': f"/api/check-lip-sync-status/{job_id}"
-                    }
-                else:
-                    return {
-                        'status': 'submitted',
-                        'result': result,
-                        'message': 'Job submitted but no job_id returned'
-                    }
-            else:
+            
+            # Implement retry logic with exponential backoff for rate limiting
+            max_retries = 5
+            retry_delay = 30  # Start with 30 seconds for rate limits
+            
+            for attempt in range(max_retries):
+                try:
+                    response = requests.post(url, headers=headers, json=request_data)
+                    
+                    if response.status_code == 429:
+                        if attempt < max_retries - 1:
+                            wait_time = retry_delay * (2 ** attempt)  # Exponential backoff: 30s, 60s, 120s, 240s, 480s
+                            print(f"Rate limit hit (429) for {language}, attempt {attempt + 1}/{max_retries}, waiting {wait_time}s...")
+                            time.sleep(wait_time)
+                            continue
+                        else:
+                            return {
+                                'status': 'failed',
+                                'error': 'Rate limit exceeded. Please wait a few minutes and try again.',
+                                'retry_after': wait_time
+                            }
+                    
+                    print(f"Sync.so API response: status={response.status_code}")
+                    print(f"Response content: {response.text}")
+                    
+                    if response.status_code == 200 or response.status_code == 201:
+                        result = response.json()
+                        print(f"Lip sync job submitted successfully: {result}")
+                        job_id = result.get('id') or result.get('job_id') or result.get('jobId')
+                        
+                        if job_id:
+                            # Return job info for polling - don't wait here
+                            return {
+                                'status': 'submitted',
+                                'job_id': job_id,
+                                'message': 'Job submitted successfully. Use job_id to check status.',
+                                'estimated_time': '3-5 minutes',
+                                'poll_url': f"/api/check-lip-sync-status/{job_id}"
+                            }
+                        else:
+                            return {
+                                'status': 'submitted',
+                                'result': result,
+                                'message': 'Job submitted but no job_id returned'
+                            }
+                    elif response.status_code == 429:
+                        # Handle 429 even on first attempt with longer wait
+                        return {
+                            'status': 'failed',
+                            'error': 'Rate limit exceeded. Please wait a few minutes and try again.',
+                            'retry_after': 120
+                        }
+                    else:
+                        return {
+                            'status': 'failed',
+                            'error': f'API error {response.status_code}: {response.text}'
+                        }
+                        
+                except requests.exceptions.RequestException as e:
+                    print(f"Request failed for {language}: {e}")
+                    if attempt == max_retries - 1:
+                        return {
+                            'status': 'failed',
+                            'error': f'Network error: {str(e)}'
+                        }
+                    time.sleep(retry_delay * (2 ** attempt))
                 print(f"Wav2Lip API error: {response.status_code} - {response.text}")
                 return {
                     'status': 'failed',
@@ -720,6 +761,77 @@ def upload_step_file():
         print(f"Upload error: {str(e)}")
         return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
+@app.route('/api/upload-external-voice', methods=['POST'])
+def upload_external_voice():
+    """Handle external voice file uploads for Telugu and Gujarati"""
+    try:
+        print("External voice upload request received")
+        print(f"Request files: {request.files}")
+        print(f"Request form: {request.form}")
+        
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file uploaded'}), 400
+        
+        file = request.files['file']
+        language = request.form.get('language', '').lower()
+        
+        # Validate language
+        if language not in ['telugu', 'gujarati']:
+            return jsonify({'error': 'Language must be telugu or gujarati'}), 400
+        
+        print(f"External voice file: {file.filename}, Language: {language}")
+        
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        # Validate file type for audio
+        file_ext = Path(file.filename).suffix.lower()
+        if file_ext not in {'.mp3', '.wav', '.m4a'}:
+            return jsonify({'error': f'File type {file_ext} not supported. Use MP3, WAV, or M4A'}), 400
+        
+        # Determine content type
+        content_type_map = {
+            '.mp3': 'audio/mpeg',
+            '.wav': 'audio/wav',
+            '.m4a': 'audio/m4a'
+        }
+        content_type = content_type_map.get(file_ext, 'audio/mpeg')
+        
+        # Upload to R2 with language-specific naming
+        filename = secure_filename(file.filename)
+        # Add language prefix for organization
+        base_name = filename.rsplit('.', 1)[0]
+        extension = filename.rsplit('.', 1)[-1]
+        unique_filename = f"{language}_{base_name}_external.{extension}"
+        
+        print(f"Uploading {unique_filename} to R2...")
+        
+        public_url, r2_filename = upload_file_to_r2(file, unique_filename, content_type, simple_name=True)
+        
+        if not public_url:
+            return jsonify({'error': 'Failed to upload file to storage'}), 500
+        
+        # Store in workflow state
+        if 'audioFiles' not in workflow_state:
+            workflow_state['audioFiles'] = {}
+        
+        workflow_state['audioFiles'][language] = public_url
+        
+        result = {
+            'audioFile': public_url,
+            'filename': filename,
+            'r2_filename': r2_filename,
+            'language': language,
+            'message': f'{language.title()} voice file uploaded successfully'
+        }
+        
+        print(f"External voice upload successful: {result}")
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"External voice upload error: {str(e)}")
+        return jsonify({'error': f'Upload failed: {str(e)}'}), 500
+
 @app.route('/api/transcribe', methods=['GET', 'POST'])
 def transcribe_audio():
     """Transcribe audio file using OpenAI Whisper"""
@@ -844,19 +956,33 @@ def voice_synthesis():
         
         print(f"Starting voice synthesis for {len(translations)} languages")
         
-        # Process Hindi and Tamil with TTS
+        # Get existing audio files (including external uploads)
+        existing_audio_files = workflow_state.get('audioFiles', {})
+        
+        # Process Hindi and Tamil with TTS (force TTS generation, ignore external files)
         for lang in ['hindi', 'tamil']:
             if lang in translations:
-                print(f"Generating {lang} audio...")
+                print(f"Generating {lang} audio with TTS...")
                 audio_url, r2_filename = tts.text_to_speech(translations[lang], lang)
                 if audio_url:
                     audio_files[lang] = audio_url
                     print(f"{lang} audio generated: {audio_url}")
+                else:
+                    print(f"Failed to generate {lang} audio")
         
-        # Store audio files in workflow state
+        # Include external voice files for Telugu and Gujarati
+        for lang in ['telugu', 'gujarati']:
+            if lang in existing_audio_files:
+                audio_files[lang] = existing_audio_files[lang]
+                print(f"{lang} external voice file included: {existing_audio_files[lang]}")
+        
+        # Store all audio files in workflow state
         workflow_state['audioFiles'].update(audio_files)
         
-        return jsonify({'audioFiles': audio_files})
+        return jsonify({
+            'audioFiles': audio_files,
+            'message': f'Audio files ready for {len(audio_files)} languages'
+        })
     except Exception as e:
         print(f"Voice synthesis error: {e}")
         return jsonify({'error': str(e)}), 500
@@ -879,11 +1005,23 @@ def lip_sync_videos():
         
         print(f"Starting lip sync for {len(audio_files)} languages")
         
+        # Process languages sequentially to avoid rate limiting
         for lang, audio_url in audio_files.items():
             print(f"Processing {lang} lip sync...")
+            
+            # Add significant delay between jobs for rate limiting
+            if len(results) > 0:  # Skip delay for first job
+                print(f"Waiting 60 seconds between jobs to prevent rate limiting...")
+                time.sleep(60)
+            
             result = lip_sync.sync_video_with_audio(video_file, audio_url, lang)
             results[lang] = result or {'status': 'failed'}
             print(f"{lang} lip sync result: {result}")
+            
+            # If rate limit hit, add extra delay
+            if result and result.get('status') == 'failed' and '429' in str(result.get('error', '')):
+                print(f"Rate limit detected for {lang}, adding extra 120s delay...")
+                time.sleep(120)
         
         return jsonify({'results': results})
     except Exception as e:
