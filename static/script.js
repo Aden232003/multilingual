@@ -17,11 +17,71 @@ class ModularWorkflowApp {
     }
     
     init() {
+        this.initTheme();
         this.setupNavigation();
+        this.setupMobileStepper();
         this.setupFileHandlers();
         this.setupLanguageTabs();
         this.setupActionButtons();
         this.loadExistingFiles();
+        this.setupSidebar();
+        this.setupGlobalLoader();
+        this.setupToasts();
+        this.enhanceThemeToggleA11y();
+        this.setupButtonRipples();
+    }
+
+    setupButtonRipples() {
+        document.addEventListener('pointerdown', (e) => {
+            const btn = e.target.closest('.btn-primary, .btn-secondary, .btn-accent');
+            if (!btn) return;
+            const rect = btn.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * 100;
+            const y = ((e.clientY - rect.top) / rect.height) * 100;
+            btn.style.setProperty('--x', x + '%');
+            btn.style.setProperty('--y', y + '%');
+        }, { passive: true });
+    }
+
+    initTheme() {
+        try {
+            const root = document.documentElement;
+            const stored = localStorage.getItem('theme');
+            const systemPrefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = stored || (systemPrefersDark ? 'dark' : 'light');
+            root.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
+            const toggle = document.getElementById('theme-toggle');
+            if (toggle) {
+                toggle.addEventListener('click', () => {
+                    const current = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+                    const next = current === 'dark' ? 'light' : 'dark';
+                    root.setAttribute('data-theme', next);
+                    localStorage.setItem('theme', next);
+                    // Update ARIA state for switch
+                    toggle.setAttribute('aria-checked', String(next === 'dark'));
+                    // Swap icon
+                    const icon = toggle.querySelector('i');
+                    if (icon) icon.className = next === 'dark' ? 'ti ti-moon' : 'ti ti-sun';
+                });
+                // Initialize ARIA and icon
+                toggle.setAttribute('aria-checked', String(theme === 'dark'));
+                const icon = toggle.querySelector('i');
+                if (icon) icon.className = theme === 'dark' ? 'ti ti-moon' : 'ti ti-sun';
+            }
+        } catch (e) {
+            // Fail silently for theme init
+        }
+    }
+
+    enhanceThemeToggleA11y() {
+        const toggle = document.getElementById('theme-toggle');
+        if (!toggle) return;
+        toggle.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                toggle.click();
+            }
+        });
     }
     
     setupNavigation() {
@@ -31,7 +91,82 @@ class ModularWorkflowApp {
                 const step = parseInt(item.dataset.step);
                 this.navigateToStep(step);
             });
+            // Keyboard navigation
+            item.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    const step = parseInt(item.dataset.step);
+                    this.navigateToStep(step);
+                }
+            });
         });
+    }
+
+    setupMobileStepper() {
+        const stepper = document.getElementById('mobile-stepper');
+        if (!stepper) return;
+        const dots = stepper.querySelectorAll('.step-dot');
+        dots.forEach(dot => {
+            dot.addEventListener('click', () => {
+                const step = parseInt(dot.dataset.step);
+                this.navigateToStep(step);
+            });
+        });
+    }
+
+    setupSidebar() {
+        const stepsToggle = document.getElementById('steps-toggle');
+        const sidebarClose = document.getElementById('sidebar-close');
+        const backdrop = document.getElementById('backdrop');
+        const body = document.body;
+        const toggle = (open) => {
+            const isOpen = open ?? !body.classList.contains('sidebar-open');
+            body.classList.toggle('sidebar-open', isOpen);
+            if (stepsToggle) stepsToggle.setAttribute('aria-expanded', String(isOpen));
+            if (backdrop) backdrop.hidden = !isOpen;
+        };
+        stepsToggle?.addEventListener('click', () => toggle());
+        sidebarClose?.addEventListener('click', () => toggle(false));
+        backdrop?.addEventListener('click', () => toggle(false));
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') toggle(false); });
+        document.querySelectorAll('.step-nav-item').forEach(item => {
+            item.addEventListener('click', () => toggle(false));
+        });
+    }
+
+    setupGlobalLoader() {
+        this.loader = {
+            el: document.getElementById('global-loader'),
+            msg: document.getElementById('loader-message'),
+            sub: document.getElementById('loader-subtext'),
+            show: (message, subtext) => {
+                if (!this.loader.el) return;
+                if (message) this.loader.msg.textContent = message;
+                if (subtext) this.loader.sub.textContent = subtext;
+                this.loader.el.hidden = false;
+            },
+            hide: () => {
+                if (!this.loader.el) return;
+                this.loader.el.hidden = true;
+            }
+        };
+    }
+
+    setupToasts() {
+        this.toastContainer = document.getElementById('toast-container');
+        this.toast = (message, type = 'info') => {
+            if (!this.toastContainer) return;
+            const el = document.createElement('div');
+            el.className = `toast ${type}`;
+            const icon = type === 'success' ? 'ti ti-check' : type === 'error' ? 'ti ti-alert-triangle' : 'ti ti-info-circle';
+            el.innerHTML = `<i class="${icon}"></i><span>${message}</span>`;
+            this.toastContainer.appendChild(el);
+            setTimeout(() => {
+                el.style.opacity = '0';
+                el.style.transform = 'translateY(8px)';
+                setTimeout(() => el.remove(), 200);
+            }, 3500);
+        };
     }
     
     navigateToStep(step) {
@@ -40,6 +175,9 @@ class ModularWorkflowApp {
             item.classList.remove('active');
             if (parseInt(item.dataset.step) === step) {
                 item.classList.add('active');
+                item.setAttribute('aria-current', 'step');
+            } else {
+                item.removeAttribute('aria-current');
             }
         });
         
@@ -50,6 +188,7 @@ class ModularWorkflowApp {
         document.getElementById(`step-${step}`).classList.add('active');
         
         this.currentStep = step;
+        this.updateMobileStepperActive(step);
         this.updateStepData(step);
     }
     
@@ -94,10 +233,57 @@ class ModularWorkflowApp {
     }
     
     setupLanguageTabs() {
-        document.querySelectorAll('.language-tab').forEach(tab => {
+        document.querySelectorAll('.language-tab').forEach((tab, index, tabs) => {
+            // Add keyboard navigation
+            tab.setAttribute('role', 'tab');
+            tab.setAttribute('tabindex', tab.classList.contains('active') ? '0' : '-1');
+            
             tab.addEventListener('click', (e) => {
                 const language = tab.dataset.lang;
-                this.switchLanguage(language, tab.parentElement);
+                const tabContainer = tab.closest('.language-tabs') || tab.parentElement;
+                
+                // Handle different tab contexts
+                if (tabContainer.closest('#step-4')) {
+                    this.switchExternalVoiceLanguage(language, tabContainer);
+                } else {
+                    this.switchLanguage(language, tabContainer);
+                }
+            });
+            
+            // Keyboard navigation
+            tab.addEventListener('keydown', (e) => {
+                let newIndex = index;
+                
+                switch (e.key) {
+                    case 'ArrowLeft':
+                    case 'ArrowUp':
+                        e.preventDefault();
+                        newIndex = index > 0 ? index - 1 : tabs.length - 1;
+                        break;
+                    case 'ArrowRight':
+                    case 'ArrowDown':
+                        e.preventDefault();
+                        newIndex = index < tabs.length - 1 ? index + 1 : 0;
+                        break;
+                    case 'Home':
+                        e.preventDefault();
+                        newIndex = 0;
+                        break;
+                    case 'End':
+                        e.preventDefault();
+                        newIndex = tabs.length - 1;
+                        break;
+                    case 'Enter':
+                    case ' ':
+                        e.preventDefault();
+                        tab.click();
+                        return;
+                    default:
+                        return;
+                }
+                
+                tabs[newIndex].focus();
+                tabs[newIndex].click();
             });
         });
     }
@@ -106,13 +292,43 @@ class ModularWorkflowApp {
         // Update active tab
         tabContainer.querySelectorAll('.language-tab').forEach(tab => {
             tab.classList.remove('active');
+            tab.setAttribute('aria-selected', 'false');
+            tab.setAttribute('tabindex', '-1');
             if (tab.dataset.lang === language) {
                 tab.classList.add('active');
+                tab.setAttribute('aria-selected', 'true');
+                tab.setAttribute('tabindex', '0');
             }
         });
         
         this.activeLanguage = language;
         this.updateLanguageContent(language);
+        
+        // Announce language change to screen readers
+        this.announceToScreenReader(`Switched to ${language} language tab`);
+    }
+    
+    switchExternalVoiceLanguage(language, tabContainer) {
+        // Update active tab for external voice uploads
+        tabContainer.querySelectorAll('.language-tab').forEach(tab => {
+            tab.classList.remove('active');
+            if (tab.dataset.lang === language) {
+                tab.classList.add('active');
+            }
+        });
+        
+        // Show/hide corresponding upload sections
+        const uploadSections = tabContainer.nextElementSibling?.querySelectorAll('.upload-section');
+        if (uploadSections) {
+            uploadSections.forEach(section => {
+                section.style.display = 'none';
+            });
+            
+            const targetSection = document.getElementById(`${language}-upload-section`);
+            if (targetSection) {
+                targetSection.style.display = 'block';
+            }
+        }
     }
     
     updateLanguageContent(language) {
@@ -167,7 +383,7 @@ class ModularWorkflowApp {
             this.navigateToStep(4);
         });
         
-        // Step 4 buttons
+        // Step 4 buttons - AI voice synthesis
         document.getElementById('start-voice-synthesis')?.addEventListener('click', () => {
             this.startVoiceSynthesis();
         });
@@ -192,6 +408,29 @@ class ModularWorkflowApp {
         document.getElementById('start-new-workflow')?.addEventListener('click', () => {
             this.resetWorkflow();
         });
+        
+        // Setup external voice upload listeners
+        this.setupExternalVoiceUploads();
+    }
+    
+    setupExternalVoiceUploads() {
+        // Gujarati audio upload
+        const gujaratiInput = document.getElementById('gujarati-audio-input');
+        const gujaratiUpload = document.getElementById('gujarati-audio-upload');
+        if (gujaratiInput && gujaratiUpload) {
+            gujaratiInput.addEventListener('change', (e) => {
+                this.handleExternalVoiceUpload(e, 'gujarati');
+            });
+        }
+        
+        // Telugu audio upload
+        const teluguInput = document.getElementById('telugu-audio-input');
+        const teluguUpload = document.getElementById('telugu-audio-upload');
+        if (teluguInput && teluguUpload) {
+            teluguInput.addEventListener('change', (e) => {
+                this.handleExternalVoiceUpload(e, 'telugu');
+            });
+        }
     }
     
     async handleFileSelect(event) {
@@ -207,6 +446,7 @@ class ModularWorkflowApp {
         const step = stepId ? parseInt(stepId.split('-')[1]) : this.currentStep;
         
         this.updateProgress(step, 'processing');
+        this.loader?.show('Uploading file…', 'We are processing your media.');
         
         try {
             const formData = new FormData();
@@ -230,6 +470,55 @@ class ModularWorkflowApp {
             this.showError('Upload failed: ' + error.message);
         } finally {
             this.updateProgress(step, 'completed');
+            this.loader?.hide();
+        }
+    }
+    
+    async handleExternalVoiceUpload(event, language) {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        this.updateProgress(4, 'processing');
+        
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('step', '4');
+            formData.append('language', language);
+            formData.append('external', 'true');
+            
+            const response = await fetch('/api/upload-external-voice', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (response.ok) {
+                this.workflowData.audioFiles[language] = result.audioFile;
+                this.showExternalVoicePreview(language, file.name);
+                this.markStepCompleted(4);
+                
+                // Show success message
+                this.showSuccess(`${language.charAt(0).toUpperCase() + language.slice(1)} voice file uploaded successfully!`);
+            } else {
+                this.showError(result.error);
+            }
+        } catch (error) {
+            this.showError('External voice upload failed: ' + error.message);
+        } finally {
+            this.updateProgress(4, 'completed');
+        }
+    }
+    
+    showExternalVoicePreview(language, filename) {
+        const preview = document.getElementById(`${language}-preview`);
+        const uploadZone = document.getElementById(`${language}-audio-upload`);
+        
+        if (preview) {
+            document.getElementById(`${language}-filename`).textContent = filename;
+            preview.style.display = 'block';
+            uploadZone.style.display = 'none';
         }
     }
     
@@ -289,6 +578,7 @@ class ModularWorkflowApp {
         }
         
         this.updateProgress(2, 'processing');
+        this.loader?.show('Transcribing audio…', 'Using OpenAI Whisper for accurate speech-to-text.');
         
         try {
             const response = await fetch('/api/transcribe', {
@@ -311,6 +601,7 @@ class ModularWorkflowApp {
             this.showError('Transcription failed: ' + error.message);
         } finally {
             this.updateProgress(2, 'completed');
+            this.loader?.hide();
         }
     }
     
@@ -343,6 +634,7 @@ class ModularWorkflowApp {
         }
         
         this.updateProgress(3, 'processing');
+        this.loader?.show('Translating culturally…', 'Adapting for Hindi, Tamil, Telugu, Gujarati with Claude.');
         
         try {
             const response = await fetch('/api/translate', {
@@ -365,6 +657,7 @@ class ModularWorkflowApp {
             this.showError('Translation failed: ' + error.message);
         } finally {
             this.updateProgress(3, 'completed');
+            this.loader?.hide();
         }
     }
     
@@ -397,6 +690,7 @@ class ModularWorkflowApp {
         }
         
         this.updateProgress(4, 'processing');
+        this.loader?.show('Generating AI voices…', 'Creating natural voices via ElevenLabs (Hindi & Tamil).');
         
         try {
             const response = await fetch('/api/voice-synthesis', {
@@ -421,6 +715,7 @@ class ModularWorkflowApp {
             this.showError('Voice synthesis failed: ' + error.message);
         } finally {
             this.updateProgress(4, 'completed');
+            this.loader?.hide();
         }
     }
     
@@ -432,6 +727,7 @@ class ModularWorkflowApp {
         
         this.updateProgress(5, 'processing');
         this.showLipSyncProgress('Submitting lip sync jobs...');
+        this.loader?.show('Creating lip-synced videos…', 'This takes ~3–5 minutes per language.');
         
         try {
             const response = await fetch('/api/lip-sync', {
@@ -457,6 +753,8 @@ class ModularWorkflowApp {
         } catch (error) {
             this.showError('Lip sync failed: ' + error.message);
             this.updateProgress(5, 'failed');
+        } finally {
+            this.loader?.hide();
         }
     }
 
@@ -465,7 +763,7 @@ class ModularWorkflowApp {
         if (videoResults) {
             videoResults.innerHTML = `
                 <div class="processing-status">
-                    <div class="spinner"></div>
+                    <div class="spinner ti ti-loader-2 ti-spin" aria-hidden="true"></div>
                     <h3>${message}</h3>
                     <p>Please be patient, this process takes 3-5 minutes per language.</p>
                     <p>Status updates every 30 seconds...</p>
@@ -598,7 +896,7 @@ class ModularWorkflowApp {
                 const videoName = data.videoFile.split('/').pop();
                 content += `
                     <div class="file-item">
-                        <div class="file-icon">🎬</div>
+                        <div class="file-icon"><i class="ti ti-video" aria-hidden="true"></i></div>
                         <div class="file-details">
                             <h4>Original Video</h4>
                             <p><strong>File:</strong> ${videoName}</p>
@@ -612,12 +910,12 @@ class ModularWorkflowApp {
                 const audioName = data.audioFile.split('/').pop();
                 content += `
                     <div class="file-item">
-                        <div class="file-icon">🎵</div>
+                        <div class="file-icon"><i class="ti ti-music" aria-hidden="true"></i></div>
                         <div class="file-details">
                             <h4>Extracted Audio</h4>
                             <p><strong>File:</strong> ${audioName}</p>
                             <p><strong>Size:</strong> ${data.audioSize || 'Unknown'}</p>
-                            <p><strong>Status:</strong> ✅ Ready for transcription</p>
+                            <p><strong>Status:</strong> <i class="ti ti-check" aria-hidden="true"></i> Ready for transcription</p>
                         </div>
                     </div>
                 `;
@@ -659,7 +957,7 @@ class ModularWorkflowApp {
                         <span class="stat-label">Characters</span>
                     </div>
                     <div class="stat-item">
-                        <span class="stat-number">✅</span>
+                        <span class="stat-number"><i class="ti ti-check" aria-hidden="true"></i></span>
                         <span class="stat-label">Ready</span>
                     </div>
                 </div>
@@ -682,7 +980,7 @@ class ModularWorkflowApp {
             }
             
             overviewDiv.innerHTML = `
-                <h4>📚 Available Translations</h4>
+                <h4><i class="ti ti-books" aria-hidden="true"></i> Available Translations</h4>
                 <div class="translation-grid">
                     ${languages.map(lang => {
                         const text = data.translations[lang];
@@ -697,10 +995,10 @@ class ModularWorkflowApp {
                         return `
                             <div class="translation-item ${lang === this.activeLanguage ? 'active' : ''}" 
                                  onclick="app.switchLanguageFromOverview('${lang}')">
-                                <div class="lang-flag">${lang === 'hindi' ? '🇮🇳' : lang === 'tamil' ? '🇮🇳' : lang === 'gujarati' ? '🇮🇳' : '🇮🇳'}</div>
+                                <div class="lang-flag"><i class="ti ti-language" aria-hidden="true"></i></div>
                                 <div class="lang-info">
                                     <h5>${langNames[lang]}</h5>
-                                    <p>${words} words • ✅ Ready</p>
+                                    <p>${words} words • <i class="ti ti-check" aria-hidden="true"></i> Ready</p>
                                 </div>
                             </div>
                         `;
@@ -731,10 +1029,10 @@ class ModularWorkflowApp {
                 const card = document.createElement('div');
                 card.className = 'result-card';
                 card.innerHTML = `
-                    <h3>🎵 ${language.toUpperCase()}</h3>
+                    <h3><i class="ti ti-music" aria-hidden="true"></i> ${language.toUpperCase()}</h3>
                     <p>Audio file generated</p>
                     <button class="btn-accent" onclick="app.downloadFile('${language}-audio', '${audioFile}')">
-                        📥 Download
+                        <i class="ti ti-download" aria-hidden="true"></i> Download
                     </button>
                 `;
                 audioResults.appendChild(card);
@@ -749,15 +1047,15 @@ class ModularWorkflowApp {
             Object.entries(results).forEach(([language, result]) => {
                 const card = document.createElement('div');
                 card.className = 'result-card';
-                const status = result.status === 'completed' ? '✅ Ready' : '❌ Failed';
+                const status = result.status === 'completed' ? 'Ready' : 'Failed';
                 const downloadUrl = result.output_url || '#';
                 
                 card.innerHTML = `
-                    <h3>🎬 ${language.toUpperCase()}</h3>
-                    <p>${status}</p>
+                    <h3><i class="ti ti-clapperboard"></i> ${language.toUpperCase()}</h3>
+                    <p>${status === 'Ready' ? '<i class=\"ti ti-check\"></i> Ready' : '<i class=\"ti ti-x\"></i> Failed'}</p>
                     ${result.status === 'completed' ? `
                         <a href="${downloadUrl}" target="_blank" class="btn-accent">
-                            📥 Download Video
+                            <i class="ti ti-download"></i> Download Video
                         </a>
                     ` : '<p>Processing failed</p>'}
                 `;
@@ -775,33 +1073,33 @@ class ModularWorkflowApp {
                 const card = document.createElement('div');
                 card.className = 'result-card';
                 
-                let statusIcon = '🔄';
+                let statusIcon = '<i class="ti ti-loader-2 ti-spin"></i>';
                 let statusText = 'Processing...';
                 let statusClass = 'processing';
                 let actionContent = '<div class="processing-spinner"></div>';
                 
                 if (result.status === 'completed') {
-                    statusIcon = '✅';
+                    statusIcon = '<i class="ti ti-check"></i>';
                     statusText = 'Ready';
                     statusClass = 'completed';
                     const downloadUrl = result.output_url || '#';
                     actionContent = `
                         <a href="${downloadUrl}" target="_blank" class="btn-accent">
-                            📥 Download Video
+                            <i class="ti ti-download"></i> Download Video
                         </a>
                     `;
                 } else if (result.status === 'failed') {
-                    statusIcon = '❌';
+                    statusIcon = '<i class="ti ti-x"></i>';
                     statusText = 'Failed';
                     statusClass = 'failed';
                     actionContent = '<p>Processing failed</p>';
                 } else if (result.status === 'submitted') {
-                    statusIcon = '⏳';
+                    statusIcon = '<i class="ti ti-clock"></i>';
                     statusText = 'Queued';
                     statusClass = 'queued';
                     actionContent = '<p>Job submitted, waiting to start...</p>';
                 } else {
-                    statusIcon = '🔄';
+                    statusIcon = '<i class="ti ti-loader-2 ti-spin"></i>';
                     statusText = 'Processing';
                     statusClass = 'processing';
                     actionContent = '<p>Creating lip-synced video...</p>';
@@ -827,7 +1125,7 @@ class ModularWorkflowApp {
                 const statusDiv = document.createElement('div');
                 statusDiv.className = 'overall-status';
                 statusDiv.innerHTML = `
-                    <p>⏱️ ${processingCount} job(s) still processing. Next update in 30 seconds...</p>
+                    <p><i class="ti ti-clock" aria-hidden="true"></i> ${processingCount} job(s) still processing. Next update in 30 seconds...</p>
                 `;
                 videoResults.appendChild(statusDiv);
             }
@@ -837,6 +1135,7 @@ class ModularWorkflowApp {
     updateProgress(step, status) {
         const progressBar = document.getElementById(`progress-${step}`);
         const statusBadge = document.getElementById(`status-${step}`);
+        const stepEl = document.getElementById(`step-${step}`);
         
         if (progressBar) {
             progressBar.style.display = status === 'processing' ? 'block' : 'none';
@@ -850,6 +1149,20 @@ class ModularWorkflowApp {
             statusBadge.className = `status-badge ${status}`;
             statusBadge.textContent = status.charAt(0).toUpperCase() + status.slice(1);
         }
+
+        // Disable/enable buttons within the current step for better feedback
+        if (stepEl) {
+            const buttons = stepEl.querySelectorAll('button');
+            buttons.forEach(btn => {
+                if (status === 'processing') {
+                    btn.setAttribute('disabled', 'true');
+                    btn.setAttribute('aria-busy', 'true');
+                } else {
+                    btn.removeAttribute('disabled');
+                    btn.removeAttribute('aria-busy');
+                }
+            });
+        }
     }
     
     markStepCompleted(step) {
@@ -858,6 +1171,7 @@ class ModularWorkflowApp {
             navItem.classList.add('completed');
         }
         this.updateProgress(step, 'completed');
+        this.updateMobileStepperCompleted(step);
     }
     
     updateStepData(step) {
@@ -987,15 +1301,23 @@ class ModularWorkflowApp {
     }
     
     showError(message) {
-        // Simple error display - could be enhanced with a modal or toast
-        alert('Error: ' + message);
+        this.toast(message, 'error');
     }
     
     showSuccess(message) {
-        // Simple success display - could be enhanced with a toast
-        console.log('Success: ' + message);
+        this.toast(message, 'success');
     }
     
+    announceToScreenReader(message) {
+        const announcer = document.createElement('div');
+        announcer.setAttribute('aria-live', 'polite');
+        announcer.setAttribute('aria-atomic', 'true');
+        announcer.className = 'visually-hidden';
+        announcer.textContent = message;
+        document.body.appendChild(announcer);
+        setTimeout(() => document.body.removeChild(announcer), 1000);
+    }
+
     resetWorkflow() {
         this.workflowData = {
             audioFile: null,
@@ -1024,6 +1346,31 @@ class ModularWorkflowApp {
         editors.forEach(editor => editor.value = '');
         
         this.navigateToStep(1);
+        // Reset mobile stepper
+        const stepper = document.getElementById('mobile-stepper');
+        if (stepper) {
+            stepper.querySelectorAll('.step-dot').forEach(dot => {
+                dot.classList.remove('completed', 'active');
+                if (parseInt(dot.dataset.step) === 1) dot.classList.add('active');
+            });
+        }
+        
+        this.announceToScreenReader('Workflow has been reset to Step 1');
+    }
+
+    updateMobileStepperActive(step) {
+        const stepper = document.getElementById('mobile-stepper');
+        if (!stepper) return;
+        stepper.querySelectorAll('.step-dot').forEach(dot => {
+            dot.classList.toggle('active', parseInt(dot.dataset.step) === step);
+        });
+    }
+
+    updateMobileStepperCompleted(step) {
+        const stepper = document.getElementById('mobile-stepper');
+        if (!stepper) return;
+        const dot = stepper.querySelector(`.step-dot[data-step="${step}"]`);
+        if (dot) dot.classList.add('completed');
     }
 }
 
